@@ -42,34 +42,34 @@ class _NotesPageState extends State<NotesPage> {
   }
 
   Future<void> _write({Note? existing}) async {
-    final controller =
-        TextEditingController(text: existing?.content ?? '');
+    final controller = TextEditingController(text: existing?.content ?? '');
     final saved = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: Text(existing == null ? '写笔记' : '编辑笔记'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            TextField(
-              controller: controller,
-              autofocus: existing == null,
-              maxLines: 8,
-              maxLength: 2000,
-              decoration: const InputDecoration(
-                hintText: '今天想记录点什么？',
-                border: OutlineInputBorder(),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              TextField(
+                controller: controller,
+                autofocus: existing == null,
+                maxLines: 8,
+                maxLength: 2000,
+                decoration: const InputDecoration(
+                  hintText: '今天想记录点什么？',
+                  border: OutlineInputBorder(),
+                ),
               ),
-            ),
-            Text(
-              '写满 20 字当天 +10 经验，连续写还有加成（每天最多 15）',
-              style: Theme.of(context)
-                  .textTheme
-                  .bodySmall
-                  ?.copyWith(color: Theme.of(context).hintColor),
-            ),
-          ],
+              Text(
+                '写满 20 字当天 +10 经验，连续写还有加成（每天最多 15）',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).hintColor,
+                ),
+              ),
+            ],
+          ),
         ),
         actions: [
           TextButton(
@@ -202,14 +202,18 @@ class _NotesPageState extends State<NotesPage> {
   Widget _buildSearchResults() {
     if (_query.trim().isEmpty) {
       return Center(
-        child: Text('输入关键词搜索全部笔记',
-            style: Theme.of(context).textTheme.bodyMedium),
+        child: Text(
+          '输入关键词搜索全部笔记',
+          style: Theme.of(context).textTheme.bodyMedium,
+        ),
       );
     }
     if (_results.isEmpty) {
       return Center(
-        child: Text('没有找到「$_query」',
-            style: Theme.of(context).textTheme.bodyMedium),
+        child: Text(
+          '没有找到「$_query」',
+          style: Theme.of(context).textTheme.bodyMedium,
+        ),
       );
     }
     return ListView.separated(
@@ -219,7 +223,10 @@ class _NotesPageState extends State<NotesPage> {
       itemBuilder: (context, index) {
         final note = _results[index];
         final day = DateTime(
-            note.createdAt.year, note.createdAt.month, note.createdAt.day);
+          note.createdAt.year,
+          note.createdAt.month,
+          note.createdAt.day,
+        );
         return Card(
           child: InkWell(
             borderRadius: BorderRadius.circular(20),
@@ -231,10 +238,9 @@ class _NotesPageState extends State<NotesPage> {
                 children: [
                   Text(
                     '${day.year}/${day.month}/${day.day}',
-                    style: Theme.of(context)
-                        .textTheme
-                        .labelSmall
-                        ?.copyWith(color: Theme.of(context).hintColor),
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: Theme.of(context).hintColor,
+                    ),
                   ),
                   const SizedBox(height: 4),
                   Text(
@@ -253,7 +259,8 @@ class _NotesPageState extends State<NotesPage> {
 
   Widget _buildDayView() {
     final today = DateTime.now();
-    final isToday = _day.year == today.year &&
+    final isToday =
+        _day.year == today.year &&
         _day.month == today.month &&
         _day.day == today.day;
     return Column(
@@ -268,8 +275,9 @@ class _NotesPageState extends State<NotesPage> {
                 children: [
                   IconButton(
                     onPressed: () async {
-                      setState(() =>
-                          _day = _day.subtract(const Duration(days: 1)));
+                      setState(
+                        () => _day = _day.subtract(const Duration(days: 1)),
+                      );
                       await _load();
                     },
                     icon: const Icon(Icons.chevron_left),
@@ -284,17 +292,17 @@ class _NotesPageState extends State<NotesPage> {
                             Text(
                               '${_day.year} 年 ${_day.month} 月 ${_day.day} 日',
                               textAlign: TextAlign.center,
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .titleSmall
+                              style: Theme.of(context).textTheme.titleSmall
                                   ?.copyWith(fontWeight: FontWeight.bold),
                             ),
                             Text(
-                              isToday ? '今天' : '周${_weekdayLabel(_day.weekday)}',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .bodySmall
-                                  ?.copyWith(color: Theme.of(context).hintColor),
+                              isToday
+                                  ? '今天'
+                                  : '周${_weekdayLabel(_day.weekday)}',
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(
+                                    color: Theme.of(context).hintColor,
+                                  ),
                             ),
                           ],
                         ),
@@ -305,8 +313,9 @@ class _NotesPageState extends State<NotesPage> {
                     onPressed: isToday
                         ? null
                         : () async {
-                            setState(() =>
-                                _day = _day.add(const Duration(days: 1)));
+                            setState(
+                              () => _day = _day.add(const Duration(days: 1)),
+                            );
                             await _load();
                           },
                     icon: const Icon(Icons.chevron_right),
@@ -323,12 +332,15 @@ class _NotesPageState extends State<NotesPage> {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Text('📖',
-                          style:
-                              Theme.of(context).textTheme.headlineLarge),
+                      Text(
+                        '📖',
+                        style: Theme.of(context).textTheme.headlineLarge,
+                      ),
                       const SizedBox(height: 8),
-                      Text('这一天还没有笔记',
-                          style: Theme.of(context).textTheme.bodyMedium),
+                      Text(
+                        '这一天还没有笔记',
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
                     ],
                   ),
                 )
@@ -348,8 +360,9 @@ class _NotesPageState extends State<NotesPage> {
                               child: InkWell(
                                 onTap: () => _write(existing: note),
                                 child: Padding(
-                                  padding:
-                                      const EdgeInsets.symmetric(vertical: 4),
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 4,
+                                  ),
                                   child: Column(
                                     crossAxisAlignment:
                                         CrossAxisAlignment.start,
@@ -361,8 +374,10 @@ class _NotesPageState extends State<NotesPage> {
                                             .textTheme
                                             .labelSmall
                                             ?.copyWith(
-                                                color: Theme.of(context)
-                                                    .hintColor),
+                                              color: Theme.of(
+                                                context,
+                                              ).hintColor,
+                                            ),
                                       ),
                                       const SizedBox(height: 4),
                                       Text(note.content),
@@ -387,13 +402,12 @@ class _NotesPageState extends State<NotesPage> {
   }
 
   String _weekdayLabel(int weekday) => switch (weekday) {
-        1 => '一',
-        2 => '二',
-        3 => '三',
-        4 => '四',
-        5 => '五',
-        6 => '六',
-        _ => '日',
-      };
+    1 => '一',
+    2 => '二',
+    3 => '三',
+    4 => '四',
+    5 => '五',
+    6 => '六',
+    _ => '日',
+  };
 }
-

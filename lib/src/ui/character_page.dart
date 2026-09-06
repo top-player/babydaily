@@ -10,16 +10,16 @@ import 'package:babydaily/src/ui/settings_page.dart';
 import 'package:babydaily/src/ui/theme.dart';
 
 String _genderEmoji(Gender g) => switch (g) {
-      Gender.male => '👦',
-      Gender.female => '👧',
-      Gender.secret => '🐣',
-    };
+  Gender.male => '👦',
+  Gender.female => '👧',
+  Gender.secret => '🐣',
+};
 
 String _genderLabel(Gender g) => switch (g) {
-      Gender.male => '男',
-      Gender.female => '女',
-      Gender.secret => '保密',
-    };
+  Gender.male => '男',
+  Gender.female => '女',
+  Gender.secret => '保密',
+};
 
 /// 属性段位文案（0-39/40-59/60-79/80-100，轻松治愈措辞）。
 String tierLabel(String attribute, int value) {
@@ -55,14 +55,16 @@ class CharacterPage extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('${atmosphere.emoji} ${atmosphere.greeting}',
-                          style: Theme.of(context)
-                              .textTheme
-                              .titleMedium
-                              ?.copyWith(fontWeight: FontWeight.bold)),
+                      Text(
+                        '${atmosphere.emoji} ${atmosphere.greeting}',
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.bold),
+                      ),
                       const SizedBox(height: 4),
-                      Text(atmosphere.tip,
-                          style: Theme.of(context).textTheme.bodySmall),
+                      Text(
+                        atmosphere.tip,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
                     ],
                   ),
                 ),
@@ -70,7 +72,8 @@ class CharacterPage extends StatelessWidget {
                   tooltip: '设置',
                   onPressed: () => Navigator.of(context).push(
                     MaterialPageRoute<void>(
-                        builder: (_) => const SettingsPage()),
+                      builder: (_) => const SettingsPage(),
+                    ),
                   ),
                   icon: const Icon(Icons.settings_outlined),
                 ),
@@ -87,7 +90,10 @@ class CharacterPage extends StatelessWidget {
   }
 
   Widget _profileCard(
-      BuildContext context, AppController controller, CharacterSnapshot c) {
+    BuildContext context,
+    AppController controller,
+    CharacterSnapshot c,
+  ) {
     final level = levelForXp(c.xp);
     final into = xpIntoLevel(c.xp);
     final needed = xpNeededForNext(c.xp);
@@ -100,8 +106,10 @@ class CharacterPage extends StatelessWidget {
           children: [
             Row(
               children: [
-                Text(_genderEmoji(c.gender),
-                    style: const TextStyle(fontSize: 44)),
+                Text(
+                  _genderEmoji(c.gender),
+                  style: const TextStyle(fontSize: 44),
+                ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
@@ -110,18 +118,19 @@ class CharacterPage extends StatelessWidget {
                       Row(
                         children: [
                           Flexible(
-                            child: Text(c.name,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .titleLarge
-                                    ?.copyWith(fontWeight: FontWeight.bold)),
+                            child: Text(
+                              c.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context).textTheme.titleLarge
+                                  ?.copyWith(fontWeight: FontWeight.bold),
+                            ),
                           ),
                           const SizedBox(width: 8),
                           Text(
-                              '${_genderLabel(c.gender)} · ${c.age} 岁',
-                              style: Theme.of(context).textTheme.bodySmall),
+                            '${_genderLabel(c.gender)} · ${c.age} 岁',
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
                         ],
                       ),
                       const SizedBox(height: 4),
@@ -146,19 +155,23 @@ class CharacterPage extends StatelessWidget {
                 child: LinearProgressIndicator(
                   value: needed == 0 ? 1 : into / (into + needed),
                   minHeight: 10,
-                  backgroundColor:
-                      Theme.of(context).colorScheme.surfaceContainerHighest,
+                  backgroundColor: Theme.of(
+                    context,
+                  ).colorScheme.surfaceContainerHighest,
                 ),
               ),
               const SizedBox(height: 4),
-              Text('经验 $into / ${into + needed}（累计 ${c.xp}）',
-                  style: Theme.of(context).textTheme.bodySmall),
+              Text(
+                '经验 $into / ${into + needed}（累计 ${c.xp}）',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
             ] else
-              Text('👑 满级！累计经验 ${c.xp}',
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleSmall
-                      ?.copyWith(fontWeight: FontWeight.bold)),
+              Text(
+                '👑 满级！累计经验 ${c.xp}',
+                style: Theme.of(
+                  context,
+                ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+              ),
             const SizedBox(height: 16),
             _attributeBar(context, '健康值', '💪', c.health),
             const SizedBox(height: 8),
@@ -172,11 +185,14 @@ class CharacterPage extends StatelessWidget {
   }
 
   Widget _attributeBar(
-      BuildContext context, String label, String emoji, int value) {
+    BuildContext context,
+    String label,
+    String emoji,
+    int value,
+  ) {
     return Row(
       children: [
-        Text('$emoji $label',
-            style: Theme.of(context).textTheme.titleSmall),
+        Text('$emoji $label', style: Theme.of(context).textTheme.titleSmall),
         const SizedBox(width: 12),
         Expanded(
           child: ClipRRect(
@@ -184,17 +200,20 @@ class CharacterPage extends StatelessWidget {
             child: LinearProgressIndicator(
               value: value / 100,
               minHeight: 10,
-              backgroundColor:
-                  Theme.of(context).colorScheme.surfaceContainerHighest,
+              backgroundColor: Theme.of(
+                context,
+              ).colorScheme.surfaceContainerHighest,
             ),
           ),
         ),
         const SizedBox(width: 12),
         SizedBox(
           width: 76,
-          child: Text('$value · ${tierLabel(label, value)}',
-              textAlign: TextAlign.right,
-              style: Theme.of(context).textTheme.bodySmall),
+          child: Text(
+            '$value · ${tierLabel(label, value)}',
+            textAlign: TextAlign.right,
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
         ),
       ],
     );
@@ -223,8 +242,11 @@ class CharacterPage extends StatelessWidget {
     );
   }
 
-  Widget _sceneChip(BuildContext context, AppController controller,
-      SceneAtmosphere atmosphere) {
+  Widget _sceneChip(
+    BuildContext context,
+    AppController controller,
+    SceneAtmosphere atmosphere,
+  ) {
     final selected = controller.scene == atmosphere.scene;
     return ChoiceChip(
       avatar: Text(atmosphere.emoji),
@@ -234,8 +256,11 @@ class CharacterPage extends StatelessWidget {
     );
   }
 
-  Future<void> _editProfile(BuildContext context, AppController controller,
-      CharacterSnapshot c) async {
+  Future<void> _editProfile(
+    BuildContext context,
+    AppController controller,
+    CharacterSnapshot c,
+  ) async {
     final nameController = TextEditingController(text: c.name);
     var age = c.age;
     var gender = c.gender;
@@ -244,42 +269,44 @@ class CharacterPage extends StatelessWidget {
       builder: (dialogContext) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
           title: const Text('编辑主角资料'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: nameController,
-                maxLength: 12,
-                decoration: const InputDecoration(labelText: '姓名'),
-              ),
-              Row(
-                children: [
-                  Text('年龄', style: Theme.of(context).textTheme.titleSmall),
-                  const SizedBox(width: 12),
-                  IconButton(
-                    onPressed: () =>
-                        setDialogState(() => age = (age - 1).clamp(1, 120)),
-                    icon: const Icon(Icons.remove_circle_outline),
-                  ),
-                  Text('$age', style: Theme.of(context).textTheme.titleLarge),
-                  IconButton(
-                    onPressed: () =>
-                        setDialogState(() => age = (age + 1).clamp(1, 120)),
-                    icon: const Icon(Icons.add_circle_outline),
-                  ),
-                ],
-              ),
-              SegmentedButton<Gender>(
-                segments: const [
-                  ButtonSegment(value: Gender.male, label: Text('男')),
-                  ButtonSegment(value: Gender.female, label: Text('女')),
-                  ButtonSegment(value: Gender.secret, label: Text('保密')),
-                ],
-                selected: {gender},
-                onSelectionChanged: (s) =>
-                    setDialogState(() => gender = s.first),
-              ),
-            ],
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: nameController,
+                  maxLength: 12,
+                  decoration: const InputDecoration(labelText: '姓名'),
+                ),
+                Row(
+                  children: [
+                    Text('年龄', style: Theme.of(context).textTheme.titleSmall),
+                    const SizedBox(width: 12),
+                    IconButton(
+                      onPressed: () =>
+                          setDialogState(() => age = (age - 1).clamp(1, 120)),
+                      icon: const Icon(Icons.remove_circle_outline),
+                    ),
+                    Text('$age', style: Theme.of(context).textTheme.titleLarge),
+                    IconButton(
+                      onPressed: () =>
+                          setDialogState(() => age = (age + 1).clamp(1, 120)),
+                      icon: const Icon(Icons.add_circle_outline),
+                    ),
+                  ],
+                ),
+                SegmentedButton<Gender>(
+                  segments: const [
+                    ButtonSegment(value: Gender.male, label: Text('男')),
+                    ButtonSegment(value: Gender.female, label: Text('女')),
+                    ButtonSegment(value: Gender.secret, label: Text('保密')),
+                  ],
+                  selected: {gender},
+                  onSelectionChanged: (s) =>
+                      setDialogState(() => gender = s.first),
+                ),
+              ],
+            ),
           ),
           actions: [
             TextButton(
@@ -291,7 +318,10 @@ class CharacterPage extends StatelessWidget {
                 final name = nameController.text.trim();
                 if (name.isEmpty) return;
                 await controller.updateCharacterProfile(
-                    name: name, age: age, gender: gender);
+                  name: name,
+                  age: age,
+                  gender: gender,
+                );
                 if (dialogContext.mounted) {
                   Navigator.of(dialogContext).pop();
                 }
