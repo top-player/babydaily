@@ -42,7 +42,7 @@ class _RootGateState extends State<RootGate> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     final controller = widget.controller;
     return AppScope(
-      controller: controller,
+      notifier: controller,
       child: Builder(builder: (context) {
         final scope = AppScope.of(context);
         return MaterialApp(

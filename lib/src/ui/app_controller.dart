@@ -76,12 +76,7 @@ class AppController extends ChangeNotifier {
 
 /// 便于页面取用的 InheritedNotifier。
 class AppScope extends InheritedNotifier<AppController> {
-  const AppScope({
-    super.key,
-    required AppController controller,
-    // ignore: use_super_parameters
-    required Widget child,
-  }) : super(notifier: controller, child: child);
+  const AppScope({super.key, required super.notifier, required super.child});
 
   static AppController of(BuildContext context) => context
       .dependOnInheritedWidgetOfExactType<AppScope>()!
