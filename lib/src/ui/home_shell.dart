@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:babydaily/src/ui/app_controller.dart';
 import 'package:babydaily/src/ui/character_page.dart';
 import 'package:babydaily/src/ui/habits_page.dart';
+import 'package:babydaily/src/ui/notes_page.dart';
 import 'package:babydaily/src/ui/onboarding.dart';
 import 'package:babydaily/src/ui/tasks_page.dart';
 import 'package:babydaily/src/ui/theme.dart';
@@ -108,12 +109,4 @@ class _HomeShellState extends State<HomeShell> {
       ),
     );
   }
-}
-
-// 笔记页在后续提交中实现。
-class NotesPage extends StatelessWidget {
-  const NotesPage({super.key});
-  @override
-  Widget build(BuildContext context) =>
-      const Center(child: Text('笔记'));
 }
