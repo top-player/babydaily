@@ -328,6 +328,72 @@ void main() {
       await service.createCharacter(name: '小明', age: 18, gender: Gender.male);
       expect(await service.checkInHabit(999, now: DateTime(2026, 6, 1, 22)), isNull);
     });
+
+    test('修改每周次数后连续按新规则重算，累计次数不变', () async {
+      await service.createCharacter(name: '小明', age: 18, gender: Gender.male);
+      final habitId = await service.createHabit(
+        name: '运动',
+        frequencyType: HabitFrequency.weekly,
+        timesPerWeek: 3,
+      );
+      await service.checkInHabit(habitId, now: DateTime(2026, 6, 1, 8));
+      await service.checkInHabit(habitId, now: DateTime(2026, 6, 3, 8));
+      await service.checkInHabit(habitId, now: DateTime(2026, 6, 5, 8));
+
+      // 改为每周 4 次：本周 3 次 < 4，连续归零；累计 3 保留
+      await service.updateHabit(
+        id: habitId,
+        name: '运动',
+        frequencyType: HabitFrequency.weekly,
+        timesPerWeek: 4,
+        reward: AttributeDelta.zero,
+        now: DateTime(2026, 6, 5, 12),
+      );
+      var status = await service.habitStatus(habitId, now: DateTime(2026, 6, 7));
+      expect(status.streak, 0);
+      expect(status.cumulative, 3);
+
+      // 新的一周（6/8 起）按新规则打卡 4 次 → 连续 1 周
+      for (final day in [8, 10, 12, 14]) {
+        await service.checkInHabit(habitId, now: DateTime(2026, 6, day, 8));
+      }
+      status = await service.habitStatus(habitId, now: DateTime(2026, 6, 14));
+      expect(status.streak, 1);
+      expect(status.cumulative, 7);
+    });
+
+    test('只改名称不改规则：连续不重置', () async {
+      await service.createCharacter(name: '小明', age: 18, gender: Gender.male);
+      final habitId = await service.createHabit(
+        name: '早睡打卡',
+        frequencyType: HabitFrequency.daily,
+      );
+      for (final day in [1, 2, 3]) {
+        await service.checkInHabit(habitId, now: DateTime(2026, 6, day, 22));
+      }
+      await service.updateHabit(
+        id: habitId,
+        name: '早睡（22:30）',
+        frequencyType: HabitFrequency.daily,
+        timesPerWeek: 1,
+        reward: AttributeDelta.zero,
+        now: DateTime(2026, 6, 3, 12),
+      );
+      final status = await service.habitStatus(habitId, now: DateTime(2026, 6, 3));
+      expect(status.streak, 3);
+    });
+
+    test('归档后不能打卡；取消归档恢复', () async {
+      await service.createCharacter(name: '小明', age: 18, gender: Gender.male);
+      final habitId = await service.createHabit(
+        name: '早睡打卡',
+        frequencyType: HabitFrequency.daily,
+      );
+      await service.setHabitArchived(habitId, true);
+      expect(await service.checkInHabit(habitId, now: DateTime(2026, 6, 1, 22)), isNull);
+      await service.setHabitArchived(habitId, false);
+      expect(await service.checkInHabit(habitId, now: DateTime(2026, 6, 1, 22)), isNotNull);
+    });
   });
 
   group('每日结算', () {

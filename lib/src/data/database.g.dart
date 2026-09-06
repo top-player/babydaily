@@ -2378,6 +2378,18 @@ class $HabitsTable extends Habits with TableInfo<$HabitsTable, Habit> {
     ),
     defaultValue: const Constant(false),
   );
+  static const VerificationMeta _ruleChangedAtMeta = const VerificationMeta(
+    'ruleChangedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> ruleChangedAt =
+      GeneratedColumn<DateTime>(
+        'rule_changed_at',
+        aliasedName,
+        true,
+        type: DriftSqlType.dateTime,
+        requiredDuringInsert: false,
+      );
   static const VerificationMeta _sortOrderMeta = const VerificationMeta(
     'sortOrder',
   );
@@ -2412,6 +2424,7 @@ class $HabitsTable extends Habits with TableInfo<$HabitsTable, Habit> {
     rewardDiscipline,
     rewardCharm,
     isArchived,
+    ruleChangedAt,
     sortOrder,
     createdAt,
   ];
@@ -2489,6 +2502,15 @@ class $HabitsTable extends Habits with TableInfo<$HabitsTable, Habit> {
         isArchived.isAcceptableOrUnknown(data['is_archived']!, _isArchivedMeta),
       );
     }
+    if (data.containsKey('rule_changed_at')) {
+      context.handle(
+        _ruleChangedAtMeta,
+        ruleChangedAt.isAcceptableOrUnknown(
+          data['rule_changed_at']!,
+          _ruleChangedAtMeta,
+        ),
+      );
+    }
     if (data.containsKey('sort_order')) {
       context.handle(
         _sortOrderMeta,
@@ -2550,6 +2572,10 @@ class $HabitsTable extends Habits with TableInfo<$HabitsTable, Habit> {
         DriftSqlType.bool,
         data['${effectivePrefix}is_archived'],
       )!,
+      ruleChangedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}rule_changed_at'],
+      ),
       sortOrder: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}sort_order'],
@@ -2580,6 +2606,9 @@ class Habit extends DataClass implements Insertable<Habit> {
   final int rewardDiscipline;
   final int rewardCharm;
   final bool isArchived;
+
+  /// 规则（频率/每周次数）最后一次变更时间；连续计数只统计此后的打卡。
+  final DateTime? ruleChangedAt;
   final int sortOrder;
   final DateTime createdAt;
   const Habit({
@@ -2592,6 +2621,7 @@ class Habit extends DataClass implements Insertable<Habit> {
     required this.rewardDiscipline,
     required this.rewardCharm,
     required this.isArchived,
+    this.ruleChangedAt,
     required this.sortOrder,
     required this.createdAt,
   });
@@ -2611,6 +2641,9 @@ class Habit extends DataClass implements Insertable<Habit> {
     map['reward_discipline'] = Variable<int>(rewardDiscipline);
     map['reward_charm'] = Variable<int>(rewardCharm);
     map['is_archived'] = Variable<bool>(isArchived);
+    if (!nullToAbsent || ruleChangedAt != null) {
+      map['rule_changed_at'] = Variable<DateTime>(ruleChangedAt);
+    }
     map['sort_order'] = Variable<int>(sortOrder);
     map['created_at'] = Variable<DateTime>(createdAt);
     return map;
@@ -2627,6 +2660,9 @@ class Habit extends DataClass implements Insertable<Habit> {
       rewardDiscipline: Value(rewardDiscipline),
       rewardCharm: Value(rewardCharm),
       isArchived: Value(isArchived),
+      ruleChangedAt: ruleChangedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(ruleChangedAt),
       sortOrder: Value(sortOrder),
       createdAt: Value(createdAt),
     );
@@ -2649,6 +2685,7 @@ class Habit extends DataClass implements Insertable<Habit> {
       rewardDiscipline: serializer.fromJson<int>(json['rewardDiscipline']),
       rewardCharm: serializer.fromJson<int>(json['rewardCharm']),
       isArchived: serializer.fromJson<bool>(json['isArchived']),
+      ruleChangedAt: serializer.fromJson<DateTime?>(json['ruleChangedAt']),
       sortOrder: serializer.fromJson<int>(json['sortOrder']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
     );
@@ -2668,6 +2705,7 @@ class Habit extends DataClass implements Insertable<Habit> {
       'rewardDiscipline': serializer.toJson<int>(rewardDiscipline),
       'rewardCharm': serializer.toJson<int>(rewardCharm),
       'isArchived': serializer.toJson<bool>(isArchived),
+      'ruleChangedAt': serializer.toJson<DateTime?>(ruleChangedAt),
       'sortOrder': serializer.toJson<int>(sortOrder),
       'createdAt': serializer.toJson<DateTime>(createdAt),
     };
@@ -2683,6 +2721,7 @@ class Habit extends DataClass implements Insertable<Habit> {
     int? rewardDiscipline,
     int? rewardCharm,
     bool? isArchived,
+    Value<DateTime?> ruleChangedAt = const Value.absent(),
     int? sortOrder,
     DateTime? createdAt,
   }) => Habit(
@@ -2695,6 +2734,9 @@ class Habit extends DataClass implements Insertable<Habit> {
     rewardDiscipline: rewardDiscipline ?? this.rewardDiscipline,
     rewardCharm: rewardCharm ?? this.rewardCharm,
     isArchived: isArchived ?? this.isArchived,
+    ruleChangedAt: ruleChangedAt.present
+        ? ruleChangedAt.value
+        : this.ruleChangedAt,
     sortOrder: sortOrder ?? this.sortOrder,
     createdAt: createdAt ?? this.createdAt,
   );
@@ -2723,6 +2765,9 @@ class Habit extends DataClass implements Insertable<Habit> {
       isArchived: data.isArchived.present
           ? data.isArchived.value
           : this.isArchived,
+      ruleChangedAt: data.ruleChangedAt.present
+          ? data.ruleChangedAt.value
+          : this.ruleChangedAt,
       sortOrder: data.sortOrder.present ? data.sortOrder.value : this.sortOrder,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
     );
@@ -2740,6 +2785,7 @@ class Habit extends DataClass implements Insertable<Habit> {
           ..write('rewardDiscipline: $rewardDiscipline, ')
           ..write('rewardCharm: $rewardCharm, ')
           ..write('isArchived: $isArchived, ')
+          ..write('ruleChangedAt: $ruleChangedAt, ')
           ..write('sortOrder: $sortOrder, ')
           ..write('createdAt: $createdAt')
           ..write(')'))
@@ -2757,6 +2803,7 @@ class Habit extends DataClass implements Insertable<Habit> {
     rewardDiscipline,
     rewardCharm,
     isArchived,
+    ruleChangedAt,
     sortOrder,
     createdAt,
   );
@@ -2773,6 +2820,7 @@ class Habit extends DataClass implements Insertable<Habit> {
           other.rewardDiscipline == this.rewardDiscipline &&
           other.rewardCharm == this.rewardCharm &&
           other.isArchived == this.isArchived &&
+          other.ruleChangedAt == this.ruleChangedAt &&
           other.sortOrder == this.sortOrder &&
           other.createdAt == this.createdAt);
 }
@@ -2787,6 +2835,7 @@ class HabitsCompanion extends UpdateCompanion<Habit> {
   final Value<int> rewardDiscipline;
   final Value<int> rewardCharm;
   final Value<bool> isArchived;
+  final Value<DateTime?> ruleChangedAt;
   final Value<int> sortOrder;
   final Value<DateTime> createdAt;
   const HabitsCompanion({
@@ -2799,6 +2848,7 @@ class HabitsCompanion extends UpdateCompanion<Habit> {
     this.rewardDiscipline = const Value.absent(),
     this.rewardCharm = const Value.absent(),
     this.isArchived = const Value.absent(),
+    this.ruleChangedAt = const Value.absent(),
     this.sortOrder = const Value.absent(),
     this.createdAt = const Value.absent(),
   });
@@ -2812,6 +2862,7 @@ class HabitsCompanion extends UpdateCompanion<Habit> {
     this.rewardDiscipline = const Value.absent(),
     this.rewardCharm = const Value.absent(),
     this.isArchived = const Value.absent(),
+    this.ruleChangedAt = const Value.absent(),
     this.sortOrder = const Value.absent(),
     required DateTime createdAt,
   }) : name = Value(name),
@@ -2827,6 +2878,7 @@ class HabitsCompanion extends UpdateCompanion<Habit> {
     Expression<int>? rewardDiscipline,
     Expression<int>? rewardCharm,
     Expression<bool>? isArchived,
+    Expression<DateTime>? ruleChangedAt,
     Expression<int>? sortOrder,
     Expression<DateTime>? createdAt,
   }) {
@@ -2840,6 +2892,7 @@ class HabitsCompanion extends UpdateCompanion<Habit> {
       if (rewardDiscipline != null) 'reward_discipline': rewardDiscipline,
       if (rewardCharm != null) 'reward_charm': rewardCharm,
       if (isArchived != null) 'is_archived': isArchived,
+      if (ruleChangedAt != null) 'rule_changed_at': ruleChangedAt,
       if (sortOrder != null) 'sort_order': sortOrder,
       if (createdAt != null) 'created_at': createdAt,
     });
@@ -2855,6 +2908,7 @@ class HabitsCompanion extends UpdateCompanion<Habit> {
     Value<int>? rewardDiscipline,
     Value<int>? rewardCharm,
     Value<bool>? isArchived,
+    Value<DateTime?>? ruleChangedAt,
     Value<int>? sortOrder,
     Value<DateTime>? createdAt,
   }) {
@@ -2868,6 +2922,7 @@ class HabitsCompanion extends UpdateCompanion<Habit> {
       rewardDiscipline: rewardDiscipline ?? this.rewardDiscipline,
       rewardCharm: rewardCharm ?? this.rewardCharm,
       isArchived: isArchived ?? this.isArchived,
+      ruleChangedAt: ruleChangedAt ?? this.ruleChangedAt,
       sortOrder: sortOrder ?? this.sortOrder,
       createdAt: createdAt ?? this.createdAt,
     );
@@ -2905,6 +2960,9 @@ class HabitsCompanion extends UpdateCompanion<Habit> {
     if (isArchived.present) {
       map['is_archived'] = Variable<bool>(isArchived.value);
     }
+    if (ruleChangedAt.present) {
+      map['rule_changed_at'] = Variable<DateTime>(ruleChangedAt.value);
+    }
     if (sortOrder.present) {
       map['sort_order'] = Variable<int>(sortOrder.value);
     }
@@ -2926,6 +2984,7 @@ class HabitsCompanion extends UpdateCompanion<Habit> {
           ..write('rewardDiscipline: $rewardDiscipline, ')
           ..write('rewardCharm: $rewardCharm, ')
           ..write('isArchived: $isArchived, ')
+          ..write('ruleChangedAt: $ruleChangedAt, ')
           ..write('sortOrder: $sortOrder, ')
           ..write('createdAt: $createdAt')
           ..write(')'))
@@ -5470,6 +5529,7 @@ typedef $$HabitsTableCreateCompanionBuilder =
       Value<int> rewardDiscipline,
       Value<int> rewardCharm,
       Value<bool> isArchived,
+      Value<DateTime?> ruleChangedAt,
       Value<int> sortOrder,
       required DateTime createdAt,
     });
@@ -5484,6 +5544,7 @@ typedef $$HabitsTableUpdateCompanionBuilder =
       Value<int> rewardDiscipline,
       Value<int> rewardCharm,
       Value<bool> isArchived,
+      Value<DateTime?> ruleChangedAt,
       Value<int> sortOrder,
       Value<DateTime> createdAt,
     });
@@ -5584,6 +5645,11 @@ class $$HabitsTableFilterComposer
 
   ColumnFilters<bool> get isArchived => $composableBuilder(
     column: $table.isArchived,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get ruleChangedAt => $composableBuilder(
+    column: $table.ruleChangedAt,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -5702,6 +5768,11 @@ class $$HabitsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<DateTime> get ruleChangedAt => $composableBuilder(
+    column: $table.ruleChangedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<int> get sortOrder => $composableBuilder(
     column: $table.sortOrder,
     builder: (column) => ColumnOrderings(column),
@@ -5761,6 +5832,11 @@ class $$HabitsTableAnnotationComposer
 
   GeneratedColumn<bool> get isArchived => $composableBuilder(
     column: $table.isArchived,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get ruleChangedAt => $composableBuilder(
+    column: $table.ruleChangedAt,
     builder: (column) => column,
   );
 
@@ -5858,6 +5934,7 @@ class $$HabitsTableTableManager
                 Value<int> rewardDiscipline = const Value.absent(),
                 Value<int> rewardCharm = const Value.absent(),
                 Value<bool> isArchived = const Value.absent(),
+                Value<DateTime?> ruleChangedAt = const Value.absent(),
                 Value<int> sortOrder = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
               }) => HabitsCompanion(
@@ -5870,6 +5947,7 @@ class $$HabitsTableTableManager
                 rewardDiscipline: rewardDiscipline,
                 rewardCharm: rewardCharm,
                 isArchived: isArchived,
+                ruleChangedAt: ruleChangedAt,
                 sortOrder: sortOrder,
                 createdAt: createdAt,
               ),
@@ -5884,6 +5962,7 @@ class $$HabitsTableTableManager
                 Value<int> rewardDiscipline = const Value.absent(),
                 Value<int> rewardCharm = const Value.absent(),
                 Value<bool> isArchived = const Value.absent(),
+                Value<DateTime?> ruleChangedAt = const Value.absent(),
                 Value<int> sortOrder = const Value.absent(),
                 required DateTime createdAt,
               }) => HabitsCompanion.insert(
@@ -5896,6 +5975,7 @@ class $$HabitsTableTableManager
                 rewardDiscipline: rewardDiscipline,
                 rewardCharm: rewardCharm,
                 isArchived: isArchived,
+                ruleChangedAt: ruleChangedAt,
                 sortOrder: sortOrder,
                 createdAt: createdAt,
               ),

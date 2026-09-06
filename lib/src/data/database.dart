@@ -79,6 +79,8 @@ class Habits extends Table {
   IntColumn get rewardDiscipline => integer().withDefault(const Constant(1))();
   IntColumn get rewardCharm => integer().withDefault(const Constant(0))();
   BoolColumn get isArchived => boolean().withDefault(const Constant(false))();
+  /// 规则（频率/每周次数）最后一次变更时间；连续计数只统计此后的打卡。
+  DateTimeColumn get ruleChangedAt => dateTime().nullable()();
   IntColumn get sortOrder => integer().withDefault(const Constant(0))();
   DateTimeColumn get createdAt => dateTime()();
 }
@@ -143,10 +145,15 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
+        onUpgrade: (m, from, to) async {
+          if (from < 2) {
+            await m.addColumn(habits, habits.ruleChangedAt);
+          }
+        },
         beforeOpen: (details) async {
           // SQLite 默认不启用外键；开启以保证级联删除（任务 → 子项）生效。
           await customStatement('PRAGMA foreign_keys = ON');

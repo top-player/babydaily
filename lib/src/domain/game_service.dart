@@ -108,6 +108,21 @@ class NoteResult {
   final int noteStreak;
 }
 
+/// 习惯展示状态（连续/累计/今日/打卡日期）。
+class HabitStatus {
+  const HabitStatus({
+    required this.streak,
+    required this.cumulative,
+    required this.checkedToday,
+    required this.checkinDates,
+  });
+
+  final int streak;
+  final int cumulative;
+  final bool checkedToday;
+  final List<String> checkinDates;
+}
+
 class GameService {
   GameService(this.db);
 
@@ -477,11 +492,18 @@ class GameService {
       );
 
       final allDates = {for (final c in existing) _parseDate(c.date), dateOnly(now)};
+      // 规则变更后：连续计数只统计变更日（含）以来的打卡
+      final afterRule = habit.ruleChangedAt == null
+          ? allDates
+          : allDates
+              .where((d) => !d.isBefore(dateOnly(habit.ruleChangedAt!)))
+              .toSet();
       final milestones = <MilestoneReached>[];
       int streak;
       if (habit.frequencyType == HabitFrequency.daily) {
-        final previous = currentDailyStreak(allDates.difference({dateOnly(now)}), now);
-        streak = currentDailyStreak(allDates, now);
+        final previous =
+            currentDailyStreak(afterRule.difference({dateOnly(now)}), now);
+        streak = currentDailyStreak(afterRule, now);
         final granted = await (db.select(db.habitMilestones)
               ..where((m) => m.habitId.equals(habitId)))
             .get();
@@ -496,7 +518,7 @@ class GameService {
                   habitId: habitId, days: m.days, grantedAt: now));
         }
       } else {
-        streak = currentWeeklyStreak(allDates, habit.timesPerWeek, now);
+        streak = currentWeeklyStreak(afterRule, habit.timesPerWeek, now);
       }
 
       final milestoneXp =
@@ -525,6 +547,91 @@ class GameService {
       ..orderBy([(c) => OrderingTerm.asc(c.date)]);
     final rows = await query.get();
     return [for (final r in rows) r.date];
+  }
+
+  /// 习惯列表（默认不含已归档）。
+  Future<List<Habit>> habits({bool includeArchived = false}) async {
+    final query = db.select(db.habits)
+      ..where((h) =>
+          includeArchived ? const Constant(true) : h.isArchived.equals(false))
+      ..orderBy([
+        (h) => OrderingTerm.asc(h.isArchived),
+        (h) => OrderingTerm.asc(h.sortOrder),
+        (h) => OrderingTerm.asc(h.id),
+      ]);
+    return query.get();
+  }
+
+  Future<Habit?> habitById(int id) async {
+    return (db.select(db.habits)..where((h) => h.id.equals(id)))
+        .getSingleOrNull();
+  }
+
+  /// 某习惯的展示状态：连续、累计、今日是否已打卡、全部打卡日期。
+  Future<HabitStatus> habitStatus(int habitId, {required DateTime now}) async {
+    final habit = await habitById(habitId);
+    if (habit == null) {
+      return HabitStatus(
+          streak: 0, cumulative: 0, checkedToday: false, checkinDates: const []);
+    }
+    final dates = await checkinDatesOf(habitId);
+    final afterRule = habit.ruleChangedAt == null
+        ? dates.map(_parseDate).toSet()
+        : dates
+            .map(_parseDate)
+            .where((d) => !d.isBefore(dateOnly(habit.ruleChangedAt!)))
+            .toSet();
+    final streak = habit.frequencyType == HabitFrequency.daily
+        ? currentDailyStreak(afterRule, now)
+        : currentWeeklyStreak(afterRule, habit.timesPerWeek, now);
+    return HabitStatus(
+      streak: streak,
+      cumulative: dates.length,
+      checkedToday: dates.contains(dateString(now)),
+      checkinDates: dates,
+    );
+  }
+
+  /// 更新习惯；频率或每周次数变化时记录 [ruleChangedAt]（连续重新计算）。
+  Future<void> updateHabit({
+    required int id,
+    required String name,
+    String description = '',
+    required HabitFrequency frequencyType,
+    required int timesPerWeek,
+    required AttributeDelta reward,
+    required DateTime now,
+  }) async {
+    final habit = await habitById(id);
+    if (habit == null) return;
+    final ruleChanged = habit.frequencyType != frequencyType ||
+        (frequencyType == HabitFrequency.weekly &&
+            habit.timesPerWeek != timesPerWeek);
+    await (db.update(db.habits)..where((h) => h.id.equals(id))).write(
+      HabitsCompanion(
+        name: Value(name),
+        description: Value(description),
+        frequencyType: Value(frequencyType),
+        timesPerWeek: Value(timesPerWeek),
+        rewardHealth: Value(reward.health),
+        rewardDiscipline: Value(reward.discipline),
+        rewardCharm: Value(reward.charm),
+        ruleChangedAt:
+            Value(ruleChanged ? now : habit.ruleChangedAt),
+      ),
+    );
+  }
+
+  /// 归档/取消归档：归档后保留历史与日历，只是停止打卡。
+  Future<void> setHabitArchived(int id, bool archived) async {
+    await (db.update(db.habits)..where((h) => h.id.equals(id))).write(
+      HabitsCompanion(isArchived: Value(archived)),
+    );
+  }
+
+  /// 删除习惯：打卡记录与里程碑随之删除（二次确认在 UI 层）。
+  Future<void> deleteHabit(int id) async {
+    await (db.delete(db.habits)..where((h) => h.id.equals(id))).go();
   }
 
   DateTime _parseDate(String s) {
