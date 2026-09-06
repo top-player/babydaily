@@ -133,6 +133,7 @@ class SettingsPage extends StatelessWidget {
       }
       return;
     }
+    if (!context.mounted) return;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
