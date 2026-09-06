@@ -2,6 +2,7 @@ import 'package:babydaily/src/data/database.dart';
 import 'package:babydaily/src/domain/attributes.dart';
 import 'package:babydaily/src/domain/enums.dart';
 import 'package:babydaily/src/domain/game_service.dart';
+import 'package:babydaily/src/domain/milestone.dart';
 import 'package:babydaily/src/domain/xp_economy.dart';
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
@@ -201,6 +202,131 @@ void main() {
       expect(log, hasLength(1));
       expect(log.single.taskName, '读完一本书');
       expect(await service.subtasksOf(mainlineId), isEmpty);
+    });
+  });
+
+  group('习惯打卡', () {
+    test('每日习惯打卡：+5 经验、默认 +1 自律、连续天数递增', () async {
+      await service.createCharacter(name: '小明', age: 18, gender: Gender.male);
+      final habitId = await service.createHabit(
+        name: '早睡打卡',
+        frequencyType: HabitFrequency.daily,
+      );
+
+      final day1 = await service.checkInHabit(habitId, now: DateTime(2026, 6, 1, 22));
+      expect(day1, isNotNull);
+      expect(day1!.xpGained, habitCheckinXp);
+      expect(day1.attrGain, const AttributeDelta(health: 0, discipline: 1, charm: 0));
+      expect(day1.streak, 1);
+      expect(day1.milestones, isEmpty);
+
+      final day2 = await service.checkInHabit(habitId, now: DateTime(2026, 6, 2, 22));
+      expect(day2!.streak, 2);
+
+      final c = (await service.character())!;
+      expect(c.xp, 10); // 5 + 5
+      expect(c.discipline, 52);
+    });
+
+    test('同一天重复打卡是空操作', () async {
+      await service.createCharacter(name: '小明', age: 18, gender: Gender.male);
+      final habitId = await service.createHabit(
+        name: '早睡打卡',
+        frequencyType: HabitFrequency.daily,
+      );
+      expect(await service.checkInHabit(habitId, now: DateTime(2026, 6, 1, 22)), isNotNull);
+      expect(await service.checkInHabit(habitId, now: DateTime(2026, 6, 1, 23)), isNull);
+      expect((await service.character())!.xp, 5);
+    });
+
+    test('连续 10 天发放里程碑 +20，且每个习惯终身一次', () async {
+      await service.createCharacter(name: '小明', age: 18, gender: Gender.male);
+      final habitId = await service.createHabit(
+        name: '阅读 30 分钟',
+        frequencyType: HabitFrequency.daily,
+      );
+
+      for (var i = 0; i < 9; i++) {
+        await service.checkInHabit(habitId, now: DateTime(2026, 6, 1 + i, 22));
+      }
+      final day10 = await service.checkInHabit(habitId, now: DateTime(2026, 6, 10, 22));
+      expect(day10!.streak, 10);
+      expect(day10.milestones, [const MilestoneReached(days: 10, xp: 20)]);
+      // 9×5 + 5 + 20 = 70
+      expect((await service.character())!.xp, 70);
+
+      // 断签后重建到 10 天：不再发放
+      await service.checkInHabit(habitId, now: DateTime(2026, 6, 20, 22)); // 新连续第 1 天
+      for (var i = 1; i < 9; i++) {
+        await service.checkInHabit(habitId, now: DateTime(2026, 6, 20 + i, 22));
+      }
+      final rebuiltDay10 = await service.checkInHabit(habitId, now: DateTime(2026, 6, 29, 22));
+      expect(rebuiltDay10!.streak, 10);
+      expect(rebuiltDay10.milestones, isEmpty);
+    });
+
+    test('连续 20/30 天分别发放对应里程碑', () async {
+      await service.createCharacter(name: '小明', age: 18, gender: Gender.male);
+      final habitId = await service.createHabit(
+        name: '阅读 30 分钟',
+        frequencyType: HabitFrequency.daily,
+      );
+      for (var i = 0; i < 19; i++) {
+        await service.checkInHabit(habitId, now: DateTime(2026, 6, 1 + i, 22));
+      }
+      final day20 = await service.checkInHabit(habitId, now: DateTime(2026, 6, 20, 22));
+      expect(day20!.milestones, [const MilestoneReached(days: 20, xp: 30)]);
+
+      for (var i = 20; i < 29; i++) {
+        await service.checkInHabit(habitId, now: DateTime(2026, 6, 1 + i, 22));
+      }
+      final day30 = await service.checkInHabit(habitId, now: DateTime(2026, 6, 30, 22));
+      expect(day30!.milestones, [const MilestoneReached(days: 30, xp: 50)]);
+    });
+
+    test('每周 3 次习惯：打卡 +5 经验，连续按达标周计算，无里程碑', () async {
+      await service.createCharacter(name: '小明', age: 18, gender: Gender.male);
+      final habitId = await service.createHabit(
+        name: '运动',
+        frequencyType: HabitFrequency.weekly,
+        timesPerWeek: 3,
+        reward: const AttributeDelta(health: 1, discipline: 0, charm: 0),
+      );
+      // 2026-06-01 是周一。第 1 周（6/1-6/7）打卡 3 次
+      final w1d1 = await service.checkInHabit(habitId, now: DateTime(2026, 6, 1, 8));
+      await service.checkInHabit(habitId, now: DateTime(2026, 6, 3, 8));
+      await service.checkInHabit(habitId, now: DateTime(2026, 6, 5, 8));
+      expect(w1d1!.xpGained, habitCheckinXp);
+      expect(w1d1.attrGain, const AttributeDelta(health: 1, discipline: 0, charm: 0));
+      // 第 2 周周一打卡：本周未达标（进行中），连续 = 1（上周达标）
+      final w2d1 = await service.checkInHabit(habitId, now: DateTime(2026, 6, 8, 8));
+      expect(w2d1!.streak, 1);
+      expect(w2d1.milestones, isEmpty);
+      expect((await service.character())!.health, 54); // 4 次打卡 × 1 健康
+    });
+
+    test('每周习惯同一天多次打卡只计一次（连续周按打卡天数计）', () async {
+      await service.createCharacter(name: '小明', age: 18, gender: Gender.male);
+      final habitId = await service.createHabit(
+        name: '运动',
+        frequencyType: HabitFrequency.weekly,
+        timesPerWeek: 3,
+      );
+      await service.checkInHabit(habitId, now: DateTime(2026, 6, 1, 8));
+      await service.checkInHabit(habitId, now: DateTime(2026, 6, 1, 20)); // 同一天
+      await service.checkInHabit(habitId, now: DateTime(2026, 6, 2, 8));
+      await service.checkInHabit(habitId, now: DateTime(2026, 6, 3, 8));
+      // 打卡 3 天即达标：周日视角连续 1 周
+      final outcome = await service.checkInHabit(habitId, now: DateTime(2026, 6, 3, 9));
+      expect(outcome, isNull); // 6/3 已打卡
+      final dates = await service.checkinDatesOf(habitId);
+      expect(dates, hasLength(3));
+      expect((await service.character())!.xp, 15); // 只有 3 次有效打卡
+    });
+
+    test('打卡不存在的习惯返回 null', () async {
+      await service.createCharacter(name: '小明', age: 18, gender: Gender.male);
+      expect(await service.checkInHabit(999, now: DateTime(2026, 6, 1, 22)), isNull);
     });
   });
 }

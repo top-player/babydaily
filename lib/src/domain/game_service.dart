@@ -9,6 +9,7 @@ import 'package:babydaily/src/data/database.dart';
 import 'package:babydaily/src/domain/attributes.dart';
 import 'package:babydaily/src/domain/enums.dart';
 import 'package:babydaily/src/domain/milestone.dart';
+import 'package:babydaily/src/domain/streak.dart';
 import 'package:babydaily/src/domain/xp_economy.dart';
 
 /// 本地日期字符串 'yyyy-MM-dd'。
@@ -312,6 +313,115 @@ class GameService {
         (t) => OrderingTerm.desc(t.id),
       ]);
     return query.get();
+  }
+
+  // ---- 习惯 ----
+
+  Future<int> createHabit({
+    required String name,
+    String description = '',
+    required HabitFrequency frequencyType,
+    int timesPerWeek = 1,
+    AttributeDelta reward = const AttributeDelta(
+        health: 0, discipline: 1, charm: 0),
+    int sortOrder = 0,
+    DateTime? now,
+  }) async {
+    return db.into(db.habits).insert(HabitsCompanion.insert(
+          name: name,
+          description: Value(description),
+          frequencyType: frequencyType,
+          timesPerWeek: Value(timesPerWeek),
+          rewardHealth: Value(reward.health),
+          rewardDiscipline: Value(reward.discipline),
+          rewardCharm: Value(reward.charm),
+          sortOrder: Value(sortOrder),
+          createdAt: now ?? DateTime.now(),
+        ));
+  }
+
+  /// 打卡：同一习惯每天最多一次；打卡 +5 固定经验 + 配置属性；
+  /// 每日习惯跨越 10/20/30 天里程碑时额外发放一次性经验。
+  Future<CheckinOutcome?> checkInHabit(int habitId, {required DateTime now}) {
+    return db.transaction(() async {
+      final habit = await (db.select(db.habits)
+            ..where((h) => h.id.equals(habitId)))
+          .getSingleOrNull();
+      if (habit == null || habit.isArchived) return null;
+
+      final today = dateString(now);
+      final existing = await (db.select(db.checkins)
+            ..where((c) => c.habitId.equals(habitId)))
+          .get();
+      if (existing.any((c) => c.date == today)) return null;
+
+      await db.into(db.checkins).insert(CheckinsCompanion.insert(
+            habitId: habitId,
+            date: today,
+            createdAt: now,
+          ));
+
+      final reward = AttributeDelta(
+        health: habit.rewardHealth,
+        discipline: habit.rewardDiscipline,
+        charm: habit.rewardCharm,
+      );
+
+      final allDates = {for (final c in existing) _parseDate(c.date), dateOnly(now)};
+      final milestones = <MilestoneReached>[];
+      int streak;
+      if (habit.frequencyType == HabitFrequency.daily) {
+        final previous = currentDailyStreak(allDates.difference({dateOnly(now)}), now);
+        streak = currentDailyStreak(allDates, now);
+        final granted = await (db.select(db.habitMilestones)
+              ..where((m) => m.habitId.equals(habitId)))
+            .get();
+        milestones.addAll(newlyReachedMilestones(
+          previousStreak: previous,
+          newStreak: streak,
+          alreadyGranted: {for (final m in granted) m.days},
+        ));
+        for (final m in milestones) {
+          await db.into(db.habitMilestones).insert(
+              HabitMilestonesCompanion.insert(
+                  habitId: habitId, days: m.days, grantedAt: now));
+        }
+      } else {
+        streak = currentWeeklyStreak(allDates, habit.timesPerWeek, now);
+      }
+
+      final milestoneXp =
+          milestones.fold<int>(0, (sum, m) => sum + m.xp);
+      final growth = await _grant(
+        xp: habitCheckinXp + milestoneXp,
+        attrs: reward,
+      );
+      return CheckinOutcome(
+        xpGained: growth.xpGained,
+        attrGain: growth.attrGain,
+        levelBefore: growth.levelBefore,
+        levelAfter: growth.levelAfter,
+        leveledUp: growth.leveledUp,
+        newTitle: growth.newTitle,
+        streak: streak,
+        milestones: milestones,
+      );
+    });
+  }
+
+  /// 某习惯的全部打卡日期（'yyyy-MM-dd'，升序）。
+  Future<List<String>> checkinDatesOf(int habitId) async {
+    final query = db.select(db.checkins)
+      ..where((c) => c.habitId.equals(habitId))
+      ..orderBy([(c) => OrderingTerm.asc(c.date)]);
+    final rows = await query.get();
+    return [for (final r in rows) r.date];
+  }
+
+  DateTime _parseDate(String s) {
+    final parts = s.split('-');
+    return DateTime(
+        int.parse(parts[0]), int.parse(parts[1]), int.parse(parts[2]));
   }
 
   // ---- 成长发放 ----
