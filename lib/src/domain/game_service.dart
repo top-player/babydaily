@@ -213,6 +213,97 @@ class GameService {
     );
   }
 
+  // ---- 任务子项 ----
+
+  Future<int> createSubtask({
+    required int taskId,
+    required String name,
+    int sortOrder = 0,
+    DateTime? now,
+  }) async {
+    return db.into(db.subtasks).insert(SubtasksCompanion.insert(
+          taskId: taskId,
+          name: name,
+          sortOrder: Value(sortOrder),
+          createdAt: now ?? DateTime.now(),
+        ));
+  }
+
+  /// 完成任务子项：子项本身不发奖；若为主线最后一个未完成子项，
+  /// 主线自动完成并发放主线完成奖励与固定经验。
+  Future<GrowthOutcome?> completeSubtask(int subtaskId,
+      {required DateTime now}) {
+    return db.transaction(() async {
+      final sub = await (db.select(db.subtasks)
+            ..where((s) => s.id.equals(subtaskId)))
+          .getSingleOrNull();
+      if (sub == null || sub.isDone) return null;
+
+      final task = await (db.select(db.tasks)
+            ..where((t) => t.id.equals(sub.taskId)))
+          .getSingleOrNull();
+      if (task == null || task.isCompleted || task.type != TaskType.mainline) {
+        return null;
+      }
+
+      await (db.update(db.subtasks)..where((s) => s.id.equals(subtaskId)))
+          .write(const SubtasksCompanion(isDone: Value(true)));
+
+      final undone = db.selectOnly(db.subtasks)
+        ..addColumns([db.subtasks.id.count()])
+        ..where(db.subtasks.taskId.equals(task.id) &
+            db.subtasks.isDone.equals(false));
+      final remaining =
+          (await undone.getSingle())!.read(db.subtasks.id.count())!;
+
+      if (remaining > 0) {
+        final row = await (db.select(db.characters)
+              ..where((c) => c.id.equals(1)))
+            .getSingle();
+        final level = levelForXp(row.xp);
+        return GrowthOutcome(
+          xpGained: subtaskXp,
+          attrGain: AttributeDelta.zero,
+          levelBefore: level,
+          levelAfter: level,
+          leveledUp: false,
+        );
+      }
+
+      // 最后一个子项：主线自动完成
+      final reward = AttributeDelta(
+        health: task.rewardHealth,
+        discipline: task.rewardDiscipline,
+        charm: task.rewardCharm,
+      );
+      await _markTaskCompleted(task.id, now);
+      final outcome = await _grant(xp: mainlineXp, attrs: reward);
+      await db.into(db.taskCompletions).insert(TaskCompletionsCompanion.insert(
+            taskId: Value(task.id),
+            taskName: task.name,
+            taskType: task.type,
+            xpGained: mainlineXp,
+            healthGained: reward.health,
+            disciplineGained: reward.discipline,
+            charmGained: reward.charm,
+            completedAt: now,
+          ));
+      return outcome;
+    });
+  }
+
+  Future<List<Subtask>> subtasksOf(int taskId) async {
+    final query = db.select(db.subtasks)
+      ..where((s) => s.taskId.equals(taskId))
+      ..orderBy([(s) => OrderingTerm.asc(s.sortOrder)]);
+    return query.get();
+  }
+
+  /// 删除任务：子项级联删除；完成历史保留（快照名称）。
+  Future<void> deleteTask(int taskId) async {
+    await (db.delete(db.tasks)..where((t) => t.id.equals(taskId))).go();
+  }
+
   /// 完成历史（快照，删除任务后保留）。
   Future<List<TaskCompletion>> completionLog() async {
     final query = db.select(db.taskCompletions)

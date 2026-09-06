@@ -133,4 +133,74 @@ void main() {
       expect(await service.completeTask(999, now: DateTime(2026, 6, 5, 10)), isNull);
     });
   });
+
+  group('主线子项与自动完成', () {
+    test('有未完成子项时主线不能直接完成', () async {
+      await service.createCharacter(name: '小明', age: 18, gender: Gender.male);
+      final mainlineId = await service.createTask(
+        name: '读完一本书',
+        type: TaskType.mainline,
+        reward: const AttributeDelta(health: 0, discipline: 2, charm: 0),
+      );
+      await service.createSubtask(taskId: mainlineId, name: '读第一章');
+      expect(await service.completeTask(mainlineId, now: DateTime(2026, 6, 5, 10)), isNull);
+    });
+
+    test('完成子项本身不发奖；最后一个子项完成时主线自动完成并发奖', () async {
+      await service.createCharacter(name: '小明', age: 18, gender: Gender.male);
+      final mainlineId = await service.createTask(
+        name: '读完一本书',
+        type: TaskType.mainline,
+        reward: const AttributeDelta(health: 0, discipline: 2, charm: 0),
+      );
+      final s1 = await service.createSubtask(taskId: mainlineId, name: '读第一章');
+      final s2 = await service.createSubtask(taskId: mainlineId, name: '读第二章');
+
+      // 第一个子项：仅标记完成，不发奖、不升级、主线未完成
+      final first = await service.completeSubtask(s1, now: DateTime(2026, 6, 5, 10));
+      expect(first, isNotNull);
+      expect(first!.xpGained, subtaskXp);
+      expect(first.attrGain, AttributeDelta.zero);
+      expect(first.leveledUp, isFalse);
+      expect((await service.character())!.xp, 0);
+      expect((await service.character())!.discipline, 50);
+      expect(await service.completionLog(), isEmpty); // 子项完成不记任务历史
+
+      // 最后一个子项：主线自动完成，发完成奖励 + 主线经验
+      final last = await service.completeSubtask(s2, now: DateTime(2026, 6, 5, 11));
+      expect(last, isNotNull);
+      expect(last!.xpGained, mainlineXp);
+      expect(last.attrGain, const AttributeDelta(health: 0, discipline: 2, charm: 0));
+      final c = (await service.character())!;
+      expect(c.xp, 50);
+      expect(c.discipline, 52);
+      expect(levelForXp(c.xp), 2);
+      final log = await service.completionLog();
+      expect(log, hasLength(1));
+      expect(log.single.taskName, '读完一本书');
+    });
+
+    test('重复完成同一子项是空操作', () async {
+      await service.createCharacter(name: '小明', age: 18, gender: Gender.male);
+      final mainlineId = await service.createTask(name: '目标', type: TaskType.mainline);
+      final s1 = await service.createSubtask(taskId: mainlineId, name: '第一步');
+      expect(await service.completeSubtask(s1, now: DateTime(2026, 6, 5, 10)), isNotNull);
+      expect(await service.completeSubtask(s1, now: DateTime(2026, 6, 5, 11)), isNull);
+    });
+
+    test('删除任务级联删除子项，但保留完成历史（快照名称）', () async {
+      await service.createCharacter(name: '小明', age: 18, gender: Gender.male);
+      final mainlineId = await service.createTask(name: '读完一本书', type: TaskType.mainline);
+      final s1 = await service.createSubtask(taskId: mainlineId, name: '读第一章');
+      await service.completeSubtask(s1, now: DateTime(2026, 6, 5, 10)); // 自动完成主线并记历史
+
+      await service.deleteTask(mainlineId);
+
+      expect(await service.completeTask(mainlineId, now: DateTime(2026, 6, 6, 10)), isNull);
+      final log = await service.completionLog();
+      expect(log, hasLength(1));
+      expect(log.single.taskName, '读完一本书');
+      expect(await service.subtasksOf(mainlineId), isEmpty);
+    });
+  });
 }
