@@ -531,6 +531,24 @@ void main() {
       await service.updateNote(shortId, long);
       expect((await service.character())!.xp, 20);
     });
+
+    test('编辑已合格的笔记不重复发放经验', () async {
+      await service.createCharacter(name: '小明', age: 18, gender: Gender.male);
+      const long = '今天读完了第一章，感觉很有收获，继续加油。';
+      final noteId = await service.addNote(long, now: DateTime(2026, 6, 5, 20)).then((r) => r.noteId);
+      expect((await service.character())!.xp, 10);
+
+      // 反复编辑同一篇合格笔记：不再发经验
+      await service.updateNote(noteId, '$long 补充一句。');
+      expect((await service.character())!.xp, 10);
+      await service.updateNote(noteId, '$long 再补充一句。');
+      expect((await service.character())!.xp, 10);
+
+      // 改成短笔记再改回长：仍不重复发（当天已发过一次）
+      await service.updateNote(noteId, '短');
+      await service.updateNote(noteId, long);
+      expect((await service.character())!.xp, 10);
+    });
   });
 
   group('笔记检索', () {

@@ -346,7 +346,8 @@ class _TasksPageState extends State<TasksPage> {
             ],
           ),
         );
-        controller.dispose();
+        // 注意：不在此处 dispose controller——对话框关闭动画未结束时
+        // TextField 仍引用它，提前 dispose 会触发框架断言崩溃。
         if (name == null || name.isEmpty || !mounted) return;
         await AppScope.of(context)
             .service
@@ -596,19 +597,7 @@ class _TasksPageState extends State<TasksPage> {
       ),
     );
 
-    if (result != true) {
-      for (final c in [
-        nameController,
-        descController,
-        healthController,
-        disciplineController,
-        charmController,
-        subtasksController,
-      ]) {
-        c.dispose();
-      }
-      return;
-    }
+    if (result != true) return;
 
     final name = nameController.text.trim();
     if (name.isEmpty) return;
@@ -640,16 +629,6 @@ class _TasksPageState extends State<TasksPage> {
         description: descController.text.trim(),
         reward: reward,
       );
-    }
-    for (final c in [
-      nameController,
-      descController,
-      healthController,
-      disciplineController,
-      charmController,
-      subtasksController,
-    ]) {
-      c.dispose();
     }
   }
 

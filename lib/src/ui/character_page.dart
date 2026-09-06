@@ -302,6 +302,6 @@ class CharacterPage extends StatelessWidget {
         ),
       ),
     );
-    nameController.dispose();
+    // 注意：不在对话框关闭动画期间 dispose controller（见 notes_page 同款注释）。
   }
 }

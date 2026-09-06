@@ -993,7 +993,6 @@ class GameService {
       qualifying: content.trim().length >= 20,
       now: now,
       noteId: id,
-      excludeNoteId: id,
     );
   }
 
@@ -1015,7 +1014,6 @@ class GameService {
       // 经验归属笔记的创建日，而不是编辑日
       now: note.createdAt,
       noteId: noteId,
-      excludeNoteId: noteId,
     );
   }
 
@@ -1025,36 +1023,37 @@ class GameService {
   }
 
   /// 当天首篇合格（≥20 字）笔记发放经验：10 + min(连续天数-1, 5)。
+  ///
+  /// 每天只发一次：以设置项 note_xp_granted_on 记录已发放日期，
+  /// 避免删除/改写笔记反复刷经验。
   Future<NoteResult> _grantNoteXpIfQualified({
     required bool qualifying,
     required DateTime now,
     required int noteId,
-    required int? excludeNoteId,
   }) async {
     final char = await character();
     if (!qualifying || char == null) {
       return NoteResult(noteId: noteId, xpGained: 0, noteStreak: 0);
     }
 
-    // 今天是否已存在其他合格笔记（决定今天是否已经发过）
-    final today = dateOnly(now);
     final allNotes = await db.select(db.notes).get();
-    final hadQualifyingToday = allNotes.any((n) =>
-        n.id != excludeNoteId &&
-        dateOnly(n.createdAt) == today &&
-        n.content.trim().length >= 20);
-
     final qualifyingDays = <DateTime>{
       for (final n in allNotes)
         if (n.content.trim().length >= 20) dateOnly(n.createdAt),
     };
     final streak = noteStreakDays(qualifyingDays, now);
 
-    if (hadQualifyingToday) {
+    final grantedOn = await (db.select(db.settings)
+          ..where((s) => s.key.equals('note_xp_granted_on')))
+        .getSingleOrNull();
+    if (grantedOn?.value == dateString(now)) {
       return NoteResult(noteId: noteId, xpGained: 0, noteStreak: streak);
     }
 
-    final growth = await _grant(xp: noteXpForStreak(streak), attrs: AttributeDelta.zero);
+    final growth =
+        await _grant(xp: noteXpForStreak(streak), attrs: AttributeDelta.zero);
+    await db.into(db.settings).insertOnConflictUpdate(SettingsCompanion.insert(
+        key: 'note_xp_granted_on', value: dateString(now)));
     return NoteResult(
       noteId: noteId,
       xpGained: growth.xpGained,

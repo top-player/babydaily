@@ -83,12 +83,8 @@ class _NotesPageState extends State<NotesPage> {
         ],
       ),
     );
-    if (saved != true) {
-      controller.dispose();
-      return;
-    }
+    if (saved != true) return;
     final content = controller.text;
-    controller.dispose();
     if (content.trim().isEmpty || !mounted) return;
 
     final service = AppScope.of(context).service;

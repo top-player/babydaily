@@ -390,15 +390,7 @@ class _HabitsPageState extends State<HabitsPage> {
         );
       }
     }
-    for (final c in [
-      nameController,
-      descController,
-      healthController,
-      disciplineController,
-      charmController,
-    ]) {
-      c.dispose();
-    }
+    // 注意：不在对话框关闭动画期间 dispose controller（见 notes_page 同款注释）。
   }
 
   Widget _field(String label, TextEditingController controller) {
