@@ -454,13 +454,13 @@ void main() {
     test('删除笔记不回追经验；短笔记改成合格笔记当天可补发', () async {
       await service.createCharacter(name: '小明', age: 18, gender: Gender.male);
       const long = '今天读完了第一章，感觉很有收获，继续加油。';
-      final noteId = await service.addNote(long, now: DateTime(2026, 6, 5, 20)).then((r) => r.noteId!);
+      final noteId = await service.addNote(long, now: DateTime(2026, 6, 5, 20)).then((r) => r.noteId);
       expect((await service.character())!.xp, 10);
       await service.deleteNote(noteId);
       expect((await service.character())!.xp, 10); // 不回追
 
       // 新的一天：先写短笔记，再改长 → 当天补发
-      final shortId = await service.addNote('打卡', now: DateTime(2026, 6, 6, 9)).then((r) => r.noteId!);
+      final shortId = await service.addNote('打卡', now: DateTime(2026, 6, 6, 9)).then((r) => r.noteId);
       expect((await service.character())!.xp, 10);
       await service.updateNote(shortId, long);
       expect((await service.character())!.xp, 20);

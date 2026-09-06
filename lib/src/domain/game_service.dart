@@ -156,6 +156,42 @@ class GameService {
         charm: row.charm,
       );
 
+  /// 更新主角资料（姓名/年龄/性别）。
+  Future<void> updateCharacterProfile({
+    required String name,
+    required int age,
+    required Gender gender,
+  }) async {
+    await (db.update(db.characters)..where((c) => c.id.equals(1))).write(
+      CharactersCompanion(
+        name: Value(name),
+        age: Value(age),
+        gender: Value(gender.name),
+        updatedAt: Value(DateTime.now()),
+      ),
+    );
+  }
+
+  // ---- 设置 ----
+
+  Future<Scene?> getScene() async {
+    final row = await (db.select(db.settings)
+          ..where((s) => s.key.equals('scene')))
+        .getSingleOrNull();
+    if (row == null) return null;
+    return Scene.values.byName(row.value);
+  }
+
+  Future<void> setScene(Scene scene) async {
+    await db.into(db.settings).insertOnConflictUpdate(
+        SettingsCompanion.insert(key: 'scene', value: scene.name));
+  }
+
+  Future<void> setSetting(String key, String value) async {
+    await db.into(db.settings).insertOnConflictUpdate(
+        SettingsCompanion.insert(key: key, value: value));
+  }
+
   // ---- 任务 ----
 
   Future<int> createTask({
@@ -207,7 +243,7 @@ class GameService {
             ..where(db.subtasks.taskId.equals(taskId) &
                 db.subtasks.isDone.equals(false));
           final undone =
-              (await undoneSubtasks.getSingle())!.read(db.subtasks.id.count())!;
+              (await undoneSubtasks.getSingle()).read(db.subtasks.id.count())!;
           if (undone > 0) return null; // 必须先完成全部子项
           xpGain = mainlineXp;
           await _markTaskCompleted(taskId, now);
@@ -282,7 +318,7 @@ class GameService {
         ..where(db.subtasks.taskId.equals(task.id) &
             db.subtasks.isDone.equals(false));
       final remaining =
-          (await undone.getSingle())!.read(db.subtasks.id.count())!;
+          (await undone.getSingle()).read(db.subtasks.id.count())!;
 
       if (remaining > 0) {
         final row = await (db.select(db.characters)
@@ -474,8 +510,16 @@ class GameService {
           if (t.completedOn != yesterday) t,
       ];
 
-      final row = await (db.select(db.characters)..where((c) => c.id.equals(1)))
-          .getSingle();
+      final row = await (db.select(db.characters)
+            ..where((c) => c.id.equals(1)))
+          .getSingleOrNull();
+      if (row == null) {
+        // 尚无主角：只记录结算标记，不处理
+        await db.into(db.settings).insertOnConflictUpdate(
+            SettingsCompanion.insert(key: 'last_settled_on', value: today));
+        return SettlementResult(
+            totalPenalty: AttributeDelta.zero, penalizedTaskNames: const []);
+      }
       final current = Attributes(
         health: row.health,
         discipline: row.discipline,

@@ -39,13 +39,13 @@ void main() {
   });
 
   group('currentWeeklyStreak（每周 N 次习惯的连续达标周数）', () {
-    // 2026-06-01 是周一；W0 = 6/1–6/7，W-1 = 5/25–5/31，W-2 = 5/18–5/24，W-3 = 5/11–5/17
-    final W0 = {d(2026, 6, 1), d(2026, 6, 2)};
-    final Wm1 = {d(2026, 5, 25), d(2026, 5, 26), d(2026, 5, 27), d(2026, 5, 28)};
-    final Wm2 = {d(2026, 5, 18), d(2026, 5, 20), d(2026, 5, 22)};
+    // 2026-06-01 是周一；week0 = 6/1–6/7，weekM1 = 5/25–5/31，weekM2 = 5/18–5/24，weekM3 = 5/11–5/17
+    final week0 = {d(2026, 6, 1), d(2026, 6, 2)};
+    final weekM1 = {d(2026, 5, 25), d(2026, 5, 26), d(2026, 5, 27), d(2026, 5, 28)};
+    final weekM2 = {d(2026, 5, 18), d(2026, 5, 20), d(2026, 5, 22)};
 
     test('本周进行中且未达标：不打断，从上周往前数', () {
-      final dates = {...W0, ...Wm1, ...Wm2};
+      final dates = {...week0, ...weekM1, ...weekM2};
       // 周三：本周 2 次 < 3，进行中 → 连续 = 上周+上上周 = 2
       expect(currentWeeklyStreak(dates, 3, d(2026, 6, 3)), 2);
     });
@@ -55,14 +55,14 @@ void main() {
         d(2026, 6, 1),
         d(2026, 6, 2),
         d(2026, 6, 3),
-        ...Wm1,
-        ...Wm2,
+        ...weekM1,
+        ...weekM2,
       };
       expect(currentWeeklyStreak(dates, 3, d(2026, 6, 3)), 3);
     });
 
     test('周日（本周已结束）未达标：连续归零', () {
-      final dates = {...W0, ...Wm1, ...Wm2}; // W0 只有 2 次
+      final dates = {...week0, ...weekM1, ...weekM2}; // week0 只有 2 次
       expect(currentWeeklyStreak(dates, 3, d(2026, 6, 7)), 0);
     });
 
@@ -71,8 +71,8 @@ void main() {
         d(2026, 6, 1),
         d(2026, 6, 2),
         d(2026, 6, 7),
-        ...Wm1,
-        ...Wm2,
+        ...weekM1,
+        ...weekM2,
       };
       expect(currentWeeklyStreak(dates, 3, d(2026, 6, 7)), 3);
     });
@@ -94,3 +94,4 @@ void main() {
     });
   });
 }
+

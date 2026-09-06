@@ -1,5 +1,5 @@
 name: babydaily
-description: "A new Flutter project."
+description: "宝宝日常——轻松治愈的个人成长 RPG：任务、习惯、笔记与主角成长。"
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev

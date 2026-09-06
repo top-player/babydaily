@@ -1,30 +1,19 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
-import 'package:flutter/material.dart';
+import 'package:babydaily/src/data/database.dart';
+import 'package:babydaily/src/ui/app_controller.dart';
+import 'package:babydaily/src/ui/home_shell.dart';
+import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:babydaily/main.dart';
-
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  testWidgets('首次启动（无主角）显示新手引导', (tester) async {
+    final db = AppDatabase(NativeDatabase.memory());
+    final controller = AppController(db);
+    await tester.pumpWidget(RootGate(controller: controller));
+    await tester.pumpAndSettle();
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+    expect(find.text('先认识一下主角'), findsOneWidget);
+    expect(find.text('宝宝日常'), findsNothing); // 标题不展示在引导页
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
-
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    await db.close();
   });
 }
