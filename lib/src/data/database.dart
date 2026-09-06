@@ -144,5 +144,13 @@ class AppDatabase extends _$AppDatabase {
 
   @override
   int get schemaVersion => 1;
+
+  @override
+  MigrationStrategy get migration => MigrationStrategy(
+        beforeOpen: (details) async {
+          // SQLite 默认不启用外键；开启以保证级联删除（任务 → 子项）生效。
+          await customStatement('PRAGMA foreign_keys = ON');
+        },
+      );
 }
 
