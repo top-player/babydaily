@@ -553,4 +553,99 @@ void main() {
       expect(misses, isEmpty);
     });
   });
+
+  group('备份（JSON 导出/导入，ADR-0001）', () {
+    test('全量往返：导出 → 新库导入 → 数据一致', () async {
+      await service.createCharacter(name: '小明', age: 18, gender: Gender.male);
+      // 主线 + 子项（完成一个）
+      final mainline = await service.createTask(
+          name: '读完一本书', type: TaskType.mainline);
+      final s1 = await service.createSubtask(taskId: mainline, name: '第一章');
+      await service.createSubtask(taskId: mainline, name: '第二章');
+      await service.completeSubtask(s1, now: DateTime(2026, 6, 1, 10));
+      // 支线并完成（产生 +20 完成历史）
+      final side = await service.createTask(
+          name: '整理书桌',
+          type: TaskType.side,
+          reward: const AttributeDelta(health: 1, discipline: 0, charm: 0));
+      await service.completeTask(side, now: DateTime(2026, 6, 2, 10));
+      // 每日任务（已完成当天）
+      final daily = await service.createTask(
+          name: '早起喝水', type: TaskType.daily);
+      await service.completeTask(daily, now: DateTime(2026, 6, 3, 9));
+      // 习惯打卡 3 天
+      final habit = await service.createHabit(
+          name: '早睡打卡', frequencyType: HabitFrequency.daily);
+      for (final day in [1, 2, 3]) {
+        await service.checkInHabit(habit, now: DateTime(2026, 6, day, 22));
+      }
+      // 两篇笔记
+      await service.addNote('今天读完了第一章，感觉很有收获，继续加油。',
+          now: DateTime(2026, 6, 1, 20));
+      await service.addNote('第二章也读完了，进度不错。',
+          now: DateTime(2026, 6, 2, 20));
+
+      final json = await service.exportJson();
+
+      final db2 = AppDatabase(NativeDatabase.memory());
+      final service2 = GameService(db2);
+      await service2.importJson(json, now: DateTime(2026, 6, 5));
+
+      final c1 = (await service.character())!;
+      final c2 = (await service2.character())!;
+      expect(c2.name, c1.name);
+      expect(c2.age, c1.age);
+      expect(c2.gender, c1.gender);
+      expect(c2.xp, c1.xp);
+      expect(c2.health, c1.health);
+      expect(c2.discipline, c1.discipline);
+      expect(c2.charm, c1.charm);
+
+      final tasks2 = await service2.dailyTasks();
+      expect(tasks2, hasLength(1));
+      expect(await service2.tasksByType(TaskType.mainline, completed: false),
+          hasLength(1));
+      expect(await service2.tasksByType(TaskType.side, completed: true),
+          hasLength(1));
+
+      // 新库 id 重排，用主线任务行取 id
+      final mainline2 =
+          (await service2.tasksByType(TaskType.mainline, completed: false))
+              .single;
+      final subs = await service2.subtasksOf(mainline2.id);
+      expect(subs, hasLength(2));
+      expect(subs.where((s) => s.isDone), hasLength(1));
+
+      final log2 = await service2.completionLog();
+      expect(log2, hasLength(2)); // 支线 + 每日任务
+      final sideLog = log2.singleWhere((l) => l.taskType == TaskType.side);
+      expect(sideLog.xpGained, sideQuestXp);
+      expect(sideLog.healthGained, 1);
+
+      final habit2 = (await service2.habits()).single;
+      expect(await service2.checkinDatesOf(habit2.id), hasLength(3));
+      final status =
+          await service2.habitStatus(habit2.id, now: DateTime(2026, 6, 3));
+      expect(status.streak, 3);
+      expect(status.cumulative, 3);
+
+      final notes2 = await service2.notesForDay(DateTime(2026, 6, 1));
+      expect(notes2, hasLength(1));
+      expect(notes2.single.content, '今天读完了第一章，感觉很有收获，继续加油。');
+
+      // 恢复当天不再触发每日结算
+      final settlement =
+          await service2.settleDay(now: DateTime(2026, 6, 5, 0, 5));
+      expect(settlement, isNull);
+
+      await db2.close();
+    });
+
+    test('错误版本拒绝导入', () async {
+      await expectLater(
+        service.importJson('{"version": 99}', now: DateTime(2026, 6, 5)),
+        throwsFormatException,
+      );
+    });
+  });
 }

@@ -89,7 +89,7 @@ class _NotesPageState extends State<NotesPage> {
     }
     final content = controller.text;
     controller.dispose();
-    if (content.trim().isEmpty) return;
+    if (content.trim().isEmpty || !mounted) return;
 
     final service = AppScope.of(context).service;
     NoteResult result;
@@ -98,7 +98,8 @@ class _NotesPageState extends State<NotesPage> {
     } else {
       result = await service.updateNote(existing.id, content);
     }
-    if (mounted && result.xpGained > 0) {
+    if (!mounted) return;
+    if (result.xpGained > 0) {
       showCelebration(context, '记录 +${result.xpGained} 经验 ✍️');
     }
     await AppScope.of(context).refresh();

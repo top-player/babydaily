@@ -4,6 +4,8 @@
 /// 分别位于 xp_economy / streak / milestone / note_xp / settlement / attributes。
 library;
 
+import 'dart:convert';
+
 import 'package:drift/drift.dart';
 import 'package:babydaily/src/data/database.dart';
 import 'package:babydaily/src/domain/attributes.dart';
@@ -205,6 +207,270 @@ class GameService {
   Future<void> setSetting(String key, String value) async {
     await db.into(db.settings).insertOnConflictUpdate(
         SettingsCompanion.insert(key: key, value: value));
+  }
+
+  // ---- 备份（ADR-0001：JSON 导出/导入） ----
+
+  /// 全量导出为 JSON 字符串。
+  Future<String> exportJson() async {
+    String? iso(DateTime? d) => d?.toIso8601String();
+    final characterRow =
+        await db.select(db.characters).getSingleOrNull();
+    final data = <String, dynamic>{
+      'version': 1,
+      'exported_at': DateTime.now().toIso8601String(),
+      'character': characterRow == null
+          ? null
+          : {
+              'name': characterRow.name,
+              'age': characterRow.age,
+              'gender': characterRow.gender,
+              'xp': characterRow.xp,
+              'health': characterRow.health,
+              'discipline': characterRow.discipline,
+              'charm': characterRow.charm,
+              'created_at': iso(characterRow.createdAt),
+              'updated_at': iso(characterRow.updatedAt),
+            },
+      'tasks': [
+        for (final t in await db.select(db.tasks).get())
+          {
+            'name': t.name,
+            'description': t.description,
+            'type': t.type.name,
+            'reward_health': t.rewardHealth,
+            'reward_discipline': t.rewardDiscipline,
+            'reward_charm': t.rewardCharm,
+            'is_completed': t.isCompleted,
+            'completed_at': iso(t.completedAt),
+            'completed_on': t.completedOn,
+            'sort_order': t.sortOrder,
+            'created_at': iso(t.createdAt),
+          }
+      ],
+      'subtasks': [
+        for (final s in await db.select(db.subtasks).get())
+          {
+            'task_name': (await (db.select(db.tasks)
+                        ..where((t) => t.id.equals(s.taskId)))
+                    .getSingleOrNull())
+                ?.name,
+            'name': s.name,
+            'is_done': s.isDone,
+            'sort_order': s.sortOrder,
+            'created_at': iso(s.createdAt),
+          }
+      ],
+      'task_completions': [
+        for (final c in await db.select(db.taskCompletions).get())
+          {
+            'task_name': c.taskName,
+            'task_type': c.taskType.name,
+            'xp_gained': c.xpGained,
+            'health_gained': c.healthGained,
+            'discipline_gained': c.disciplineGained,
+            'charm_gained': c.charmGained,
+            'completed_at': iso(c.completedAt),
+          }
+      ],
+      'habits': [
+        for (final h in await db.select(db.habits).get())
+          {
+            'name': h.name,
+            'description': h.description,
+            'frequency_type': h.frequencyType.name,
+            'times_per_week': h.timesPerWeek,
+            'reward_health': h.rewardHealth,
+            'reward_discipline': h.rewardDiscipline,
+            'reward_charm': h.rewardCharm,
+            'is_archived': h.isArchived,
+            'rule_changed_at': iso(h.ruleChangedAt),
+            'sort_order': h.sortOrder,
+            'created_at': iso(h.createdAt),
+          }
+      ],
+      'checkins': [
+        for (final c in await db.select(db.checkins).get())
+          {
+            'habit_name': (await (db.select(db.habits)
+                        ..where((h) => h.id.equals(c.habitId)))
+                    .getSingleOrNull())
+                ?.name,
+            'date': c.date,
+            'created_at': iso(c.createdAt),
+          }
+      ],
+      'habit_milestones': [
+        for (final m in await db.select(db.habitMilestones).get())
+          {
+            'habit_name': (await (db.select(db.habits)
+                        ..where((h) => h.id.equals(m.habitId)))
+                    .getSingleOrNull())
+                ?.name,
+            'days': m.days,
+            'granted_at': iso(m.grantedAt),
+          }
+      ],
+      'notes': [
+        for (final n in await db.select(db.notes).get())
+          {
+            'content': n.content,
+            'created_at': iso(n.createdAt),
+            'updated_at': iso(n.updatedAt),
+          }
+      ],
+      'settings': {
+        for (final s in await db.select(db.settings).get()) s.key: s.value,
+      },
+    };
+    return jsonEncode(data);
+  }
+
+  /// 从 JSON 导入：清空当前数据后恢复备份内容（事务保证原子性）。
+  ///
+  /// 关联通过名称还原（任务名/习惯名），导入后当天不再触发每日结算。
+  Future<void> importJson(String json, {required DateTime now}) async {
+    final data = jsonDecode(json) as Map<String, dynamic>;
+    if (data['version'] != 1) {
+      throw const FormatException('不支持的备份版本');
+    }
+    await db.transaction(() async {
+      // FK 顺序清空
+      await db.delete(db.subtasks).go();
+      await db.delete(db.checkins).go();
+      await db.delete(db.habitMilestones).go();
+      await db.delete(db.taskCompletions).go();
+      await db.delete(db.tasks).go();
+      await db.delete(db.habits).go();
+      await db.delete(db.notes).go();
+      await db.delete(db.settings).go();
+      await db.delete(db.characters).go();
+
+      DateTime? parseIso(dynamic v) =>
+          v == null ? null : DateTime.parse(v as String);
+      final taskNameToId = <String, int>{};
+      final habitNameToId = <String, int>{};
+
+      final character = data['character'] as Map<String, dynamic>?;
+      if (character != null) {
+        await db.into(db.characters).insert(CharactersCompanion.insert(
+              id: const Value(1),
+              name: character['name'] as String,
+              age: character['age'] as int,
+              gender: character['gender'] as String,
+              xp: Value(character['xp'] as int),
+              health: Value(character['health'] as int),
+              discipline: Value(character['discipline'] as int),
+              charm: Value(character['charm'] as int),
+              createdAt: parseIso(character['created_at']) ?? now,
+              updatedAt: parseIso(character['updated_at']) ?? now,
+            ));
+      }
+
+      for (final t in (data['tasks'] as List).cast<Map<String, dynamic>>()) {
+        final id = await db.into(db.tasks).insert(TasksCompanion.insert(
+              name: t['name'] as String,
+              description: Value(t['description'] as String? ?? ''),
+              type: TaskType.values.byName(t['type'] as String),
+              rewardHealth: Value(t['reward_health'] as int),
+              rewardDiscipline: Value(t['reward_discipline'] as int),
+              rewardCharm: Value(t['reward_charm'] as int),
+              isCompleted: Value(t['is_completed'] as bool),
+              completedAt: Value(parseIso(t['completed_at'])),
+              completedOn: Value(t['completed_on'] as String?),
+              sortOrder: Value(t['sort_order'] as int),
+              createdAt: parseIso(t['created_at']) ?? now,
+            ));
+        taskNameToId[t['name'] as String] = id;
+      }
+
+      for (final s in (data['subtasks'] as List).cast<Map<String, dynamic>>()) {
+        final taskId = taskNameToId[s['task_name']];
+        if (taskId == null) continue;
+        await db.into(db.subtasks).insert(SubtasksCompanion.insert(
+              taskId: taskId,
+              name: s['name'] as String,
+              isDone: Value(s['is_done'] as bool),
+              sortOrder: Value(s['sort_order'] as int),
+              createdAt: parseIso(s['created_at']) ?? now,
+            ));
+      }
+
+      for (final c
+          in (data['task_completions'] as List).cast<Map<String, dynamic>>()) {
+        await db.into(db.taskCompletions).insert(
+            TaskCompletionsCompanion.insert(
+              taskName: c['task_name'] as String,
+              taskType: TaskType.values.byName(c['task_type'] as String),
+              xpGained: c['xp_gained'] as int,
+              healthGained: c['health_gained'] as int,
+              disciplineGained: c['discipline_gained'] as int,
+              charmGained: c['charm_gained'] as int,
+              completedAt: parseIso(c['completed_at']) ?? now,
+            ));
+      }
+
+      for (final h in (data['habits'] as List).cast<Map<String, dynamic>>()) {
+        final id = await db.into(db.habits).insert(HabitsCompanion.insert(
+              name: h['name'] as String,
+              description: Value(h['description'] as String? ?? ''),
+              frequencyType: HabitFrequency.values
+                  .byName(h['frequency_type'] as String),
+              timesPerWeek: Value(h['times_per_week'] as int),
+              rewardHealth: Value(h['reward_health'] as int),
+              rewardDiscipline: Value(h['reward_discipline'] as int),
+              rewardCharm: Value(h['reward_charm'] as int),
+              isArchived: Value(h['is_archived'] as bool),
+              ruleChangedAt: Value(parseIso(h['rule_changed_at'])),
+              sortOrder: Value(h['sort_order'] as int),
+              createdAt: parseIso(h['created_at']) ?? now,
+            ));
+        habitNameToId[h['name'] as String] = id;
+      }
+
+      for (final c in (data['checkins'] as List).cast<Map<String, dynamic>>()) {
+        final habitId = habitNameToId[c['habit_name']];
+        if (habitId == null) continue;
+        await db.into(db.checkins).insert(CheckinsCompanion.insert(
+              habitId: habitId,
+              date: c['date'] as String,
+              createdAt: parseIso(c['created_at']) ?? now,
+            ));
+      }
+
+      for (final m in (data['habit_milestones'] as List)
+          .cast<Map<String, dynamic>>()) {
+        final habitId = habitNameToId[m['habit_name']];
+        if (habitId == null) continue;
+        await db.into(db.habitMilestones).insert(
+            HabitMilestonesCompanion.insert(
+              habitId: habitId,
+              days: m['days'] as int,
+              grantedAt: parseIso(m['granted_at']) ?? now,
+            ));
+      }
+
+      for (final n in (data['notes'] as List).cast<Map<String, dynamic>>()) {
+        await db.into(db.notes).insert(NotesCompanion.insert(
+              content: n['content'] as String,
+              createdAt: parseIso(n['created_at']) ?? now,
+              updatedAt: parseIso(n['updated_at']) ?? now,
+            ));
+      }
+
+      final settings = (data['settings'] as Map<String, dynamic>? ?? {})
+          .cast<String, String>();
+      await db.batch((b) {
+        b.insertAll(db.settings, [
+          for (final e in settings.entries)
+            SettingsCompanion.insert(key: e.key, value: e.value),
+        ]);
+      });
+      // 恢复当天不再触发每日结算（友好：不给恢复动作加惩罚）
+      await db.into(db.settings).insertOnConflictUpdate(
+          SettingsCompanion.insert(
+              key: 'last_settled_on', value: dateString(now)));
+    });
   }
 
   // ---- 任务 ----

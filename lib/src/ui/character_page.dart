@@ -6,6 +6,7 @@ import 'package:babydaily/src/domain/enums.dart';
 import 'package:babydaily/src/domain/game_service.dart';
 import 'package:babydaily/src/domain/xp_economy.dart';
 import 'package:babydaily/src/ui/app_controller.dart';
+import 'package:babydaily/src/ui/settings_page.dart';
 import 'package:babydaily/src/ui/theme.dart';
 
 String _genderEmoji(Gender g) => switch (g) {
@@ -47,18 +48,32 @@ class CharacterPage extends StatelessWidget {
         Card(
           color: Theme.of(context).colorScheme.primaryContainer,
           child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            padding: const EdgeInsets.fromLTRB(20, 12, 8, 12),
+            child: Row(
               children: [
-                Text('${atmosphere.emoji} ${atmosphere.greeting}',
-                    style: Theme.of(context)
-                        .textTheme
-                        .titleMedium
-                        ?.copyWith(fontWeight: FontWeight.bold)),
-                const SizedBox(height: 4),
-                Text(atmosphere.tip,
-                    style: Theme.of(context).textTheme.bodySmall),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('${atmosphere.emoji} ${atmosphere.greeting}',
+                          style: Theme.of(context)
+                              .textTheme
+                              .titleMedium
+                              ?.copyWith(fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 4),
+                      Text(atmosphere.tip,
+                          style: Theme.of(context).textTheme.bodySmall),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  tooltip: '设置',
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                        builder: (_) => const SettingsPage()),
+                  ),
+                  icon: const Icon(Icons.settings_outlined),
+                ),
               ],
             ),
           ),
