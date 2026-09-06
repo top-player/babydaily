@@ -539,10 +539,25 @@ class _HabitsPageState extends State<HabitsPage> {
   }
 
   Widget _field(String label, TextEditingController controller) {
-    return TextField(
-      controller: controller,
-      keyboardType: TextInputType.number,
-      decoration: InputDecoration(labelText: label, isDense: true),
+    // 浮动标签（M3 描边式）会压在边框线上、与上方标题重叠，
+    // 所以改用"框外小标题 + 无标签输入框"的布局。
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 12),
+          child: Text(label, style: Theme.of(context).textTheme.bodySmall),
+        ),
+        const SizedBox(height: 4),
+        Semantics(
+          label: label,
+          child: TextField(
+            controller: controller,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(),
+          ),
+        ),
+      ],
     );
   }
 }
