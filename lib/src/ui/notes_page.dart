@@ -218,7 +218,7 @@ class _NotesPageState extends State<NotesPage> {
     return ListView.separated(
       padding: const EdgeInsets.all(16),
       itemCount: _results.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 8),
+      separatorBuilder: (_, _) => const SizedBox(height: 8),
       itemBuilder: (context, index) {
         final note = _results[index];
         final day = DateTime(
@@ -338,7 +338,7 @@ class _NotesPageState extends State<NotesPage> {
               : ListView.separated(
                   padding: const EdgeInsets.all(16),
                   itemCount: _notes.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 8),
+                  separatorBuilder: (_, _) => const SizedBox(height: 8),
                   itemBuilder: (context, index) {
                     final note = _notes[index];
                     return Card(
@@ -399,3 +399,4 @@ class _NotesPageState extends State<NotesPage> {
         _ => '日',
       };
 }
+
