@@ -1,17 +1,25 @@
-# babydaily
+# 宝宝日常
 
-A new Flutter project.
+轻松治愈的个人成长 RPG（Android / Flutter）：主角通过完成任务、坚持习惯、随手写笔记获得成长，用等级、属性与连续记录鼓励长期坚持。
 
-## Getting Started
+## 玩法
 
-This project is a starting point for a Flutter application.
+- **主角**：姓名/年龄/性别自设；经验值驱动等级（满级 50，称号随等级解锁）；健康值/自律值/魅力值 0–100，不衰减。
+- **任务**：主线（长期目标，可拆子项，全部完成自动发完成奖励）、支线（一次性）、每日任务（0 点重置，未完成会扣除配置属性）；奖励只配置三属性，经验值由系统固定发放。
+- **习惯**：每日 / 每周 N 次；打卡默认 +1 自律、+5 经验；连续 10/20/30 天有一次性里程碑奖励；断签归零、累计次数永久保留；月历 + 年度热力图展示。
+- **笔记**：一天多篇、按天翻页、全文搜索；写满 20 字当天 +10 经验，连续写有加成（封顶 15）。
+- **场景**：家里 / 公司 / 游玩三套氛围（主题色、问候与提示文案），手动切换。
 
-A few resources to get you started if this is your first Flutter project:
+## 工程
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+- 领域规则（经验经济、等级曲线、连续计算、每日结算、笔记经验）以单元测试锁定，见 `test/domain/`。
+- 设计上下文：`CONTEXT.md`（术语表）；关键决策：`docs/adr/`（本地 SQLite+JSON 备份 / 习惯与任务分离 / 经验经济 / 每日结算惩罚）。
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+## 开发
+
+```sh
+flutter pub get
+dart run build_runner build   # drift 代码生成
+flutter test                  # 全部测试
+flutter build apk             # 构建
+```
