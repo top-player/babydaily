@@ -46,19 +46,23 @@ class _RootGateState extends State<RootGate> with WidgetsBindingObserver {
     final controller = widget.controller;
     return AppScope(
       notifier: controller,
-      child: Builder(builder: (context) {
-        final scope = AppScope.of(context);
-        return MaterialApp(
-          title: '宝宝日常',
-          debugShowCheckedModeBanner: false,
-          theme: buildTheme(scope.scene),
-          home: switch ((scope.initialized, scope.hasCharacter)) {
-            (false, _) => const _SplashPage(),
-            (true, false) => const OnboardingPage(),
-            (true, true) => const HomeShell(),
-          },
-        );
-      }),
+      child: Builder(
+        builder: (context) {
+          final scope = AppScope.of(context);
+          return MaterialApp(
+            title: '宝宝日常',
+            debugShowCheckedModeBanner: false,
+            theme: buildTheme(scope.scene),
+            darkTheme: buildTheme(scope.scene, brightness: Brightness.dark),
+            themeMode: ThemeMode.system,
+            home: switch ((scope.initialized, scope.hasCharacter)) {
+              (false, _) => const _SplashPage(),
+              (true, false) => const OnboardingPage(),
+              (true, true) => const HomeShell(),
+            },
+          );
+        },
+      ),
     );
   }
 }
@@ -68,8 +72,51 @@ class _SplashPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(
-      body: Center(child: Text('🐣', style: TextStyle(fontSize: 64))),
+    final scheme = Theme.of(context).colorScheme;
+    return Scaffold(
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 96,
+              height: 96,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: scheme.primaryContainer,
+                border: Border.all(
+                  color: scheme.outlineVariant.withValues(alpha: 0.8),
+                  width: 1.5,
+                ),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x228A6A3B),
+                    blurRadius: 24,
+                    offset: Offset(0, 10),
+                  ),
+                ],
+              ),
+              child: const Text('🐣', style: TextStyle(fontSize: 48)),
+            ),
+            const SizedBox(height: 24),
+            Text(
+              '宝宝日常',
+              style: Theme.of(
+                context,
+              ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 8),
+            Text('轻轻松松，长成自己的样子', style: Theme.of(context).textTheme.bodySmall),
+            const SizedBox(height: 28),
+            const SizedBox(
+              width: 22,
+              height: 22,
+              child: CircularProgressIndicator(strokeWidth: 2.5),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -101,10 +148,26 @@ class _HomeShellState extends State<HomeShell> {
         selectedIndex: _index,
         onDestinationSelected: (i) => setState(() => _index = i),
         destinations: const [
-          NavigationDestination(icon: Icon(Icons.face_outlined), label: '主角'),
-          NavigationDestination(icon: Icon(Icons.checklist_outlined), label: '任务'),
-          NavigationDestination(icon: Icon(Icons.local_fire_department_outlined), label: '习惯'),
-          NavigationDestination(icon: Icon(Icons.edit_note_outlined), label: '笔记'),
+          NavigationDestination(
+            icon: Icon(Icons.face_outlined),
+            selectedIcon: Icon(Icons.face),
+            label: '主角',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.checklist_outlined),
+            selectedIcon: Icon(Icons.checklist),
+            label: '任务',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.local_fire_department_outlined),
+            selectedIcon: Icon(Icons.local_fire_department),
+            label: '习惯',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.edit_note_outlined),
+            selectedIcon: Icon(Icons.edit_note),
+            label: '笔记',
+          ),
         ],
       ),
     );

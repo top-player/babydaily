@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:babydaily/src/data/database.dart';
 import 'package:babydaily/src/domain/game_service.dart';
 import 'package:babydaily/src/ui/app_controller.dart';
+import 'package:babydaily/src/ui/clay.dart';
 import 'package:babydaily/src/ui/feedback.dart';
 
 class NotesPage extends StatefulWidget {
@@ -57,15 +58,13 @@ class _NotesPageState extends State<NotesPage> {
                 autofocus: existing == null,
                 maxLines: 8,
                 maxLength: 2000,
-                decoration: const InputDecoration(
-                  hintText: '今天想记录点什么？',
-                  border: OutlineInputBorder(),
-                ),
+                decoration: const InputDecoration(hintText: '今天想记录点什么？'),
               ),
-              Text(
-                '写满 20 字当天 +10 经验，连续写还有加成（每天最多 15）',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).hintColor,
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  '写满 20 字当天 +10 经验，连续写还有加成（每天最多 15）',
+                  style: Theme.of(context).textTheme.bodySmall,
                 ),
               ),
             ],
@@ -166,11 +165,13 @@ class _NotesPageState extends State<NotesPage> {
                 });
               },
               icon: const Icon(Icons.close),
+              tooltip: '关闭搜索',
             )
           else
             IconButton(
               onPressed: () => setState(() => _searching = true),
               icon: const Icon(Icons.search),
+              tooltip: '搜索笔记',
             ),
         ],
       ),
@@ -192,6 +193,8 @@ class _NotesPageState extends State<NotesPage> {
       decoration: const InputDecoration(
         hintText: '搜索笔记内容…',
         border: InputBorder.none,
+        filled: false,
+        contentPadding: EdgeInsets.symmetric(vertical: 12),
       ),
       onChanged: (value) {
         setState(() => _query = value);
@@ -203,24 +206,45 @@ class _NotesPageState extends State<NotesPage> {
   Widget _buildSearchResults() {
     if (_query.trim().isEmpty) {
       return Center(
-        child: Text(
-          '输入关键词搜索全部笔记',
-          style: Theme.of(context).textTheme.bodyMedium,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            ClayAvatar(
+              icon: Icons.search,
+              color: Theme.of(context).colorScheme.primary,
+              size: 72,
+              iconSize: 34,
+            ),
+            const SizedBox(height: 14),
+            Text('输入关键词搜索全部笔记', style: Theme.of(context).textTheme.bodyMedium),
+          ],
         ),
       );
     }
     if (_results.isEmpty) {
       return Center(
-        child: Text(
-          '没有找到「$_query」',
-          style: Theme.of(context).textTheme.bodyMedium,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            ClayAvatar(
+              icon: Icons.search_off,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+              size: 72,
+              iconSize: 34,
+            ),
+            const SizedBox(height: 14),
+            Text(
+              '没有找到「$_query」',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+          ],
         ),
       );
     }
     return ListView.separated(
       padding: const EdgeInsets.all(16),
       itemCount: _results.length,
-      separatorBuilder: (_, _) => const SizedBox(height: 8),
+      separatorBuilder: (_, _) => const SizedBox(height: 10),
       itemBuilder: (context, index) {
         final note = _results[index];
         final day = DateTime(
@@ -229,21 +253,21 @@ class _NotesPageState extends State<NotesPage> {
           note.createdAt.day,
         );
         return Card(
+          margin: EdgeInsets.zero,
           child: InkWell(
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(22),
             onTap: () => _jumpTo(day),
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    '${day.year}/${day.month}/${day.day}',
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: Theme.of(context).hintColor,
-                    ),
+                  TagPill(
+                    icon: Icons.calendar_today,
+                    text: '${day.year}/${day.month}/${day.day}',
+                    color: Theme.of(context).colorScheme.primary,
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 8),
                   Text(
                     note.content,
                     maxLines: 2,
@@ -264,14 +288,16 @@ class _NotesPageState extends State<NotesPage> {
         _day.year == today.year &&
         _day.month == today.month &&
         _day.day == today.day;
+    final scheme = Theme.of(context).colorScheme;
     return Column(
       children: [
         // 日期导航
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
           child: Card(
+            margin: EdgeInsets.zero,
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
               child: Row(
                 children: [
                   IconButton(
@@ -282,28 +308,31 @@ class _NotesPageState extends State<NotesPage> {
                       await _load();
                     },
                     icon: const Icon(Icons.chevron_left),
+                    tooltip: '前一天',
                   ),
                   Expanded(
                     child: InkWell(
                       onTap: _pickDay,
+                      borderRadius: BorderRadius.circular(14),
                       child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        padding: const EdgeInsets.symmetric(vertical: 10),
                         child: Column(
                           children: [
                             Text(
                               '${_day.year} 年 ${_day.month} 月 ${_day.day} 日',
                               textAlign: TextAlign.center,
                               style: Theme.of(context).textTheme.titleSmall
-                                  ?.copyWith(fontWeight: FontWeight.bold),
+                                  ?.copyWith(
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 15,
+                                  ),
                             ),
+                            const SizedBox(height: 2),
                             Text(
                               isToday
-                                  ? '今天'
+                                  ? '今天 · ${_weekdayLabel(_day.weekday)}'
                                   : '周${_weekdayLabel(_day.weekday)}',
-                              style: Theme.of(context).textTheme.bodySmall
-                                  ?.copyWith(
-                                    color: Theme.of(context).hintColor,
-                                  ),
+                              style: Theme.of(context).textTheme.bodySmall,
                             ),
                           ],
                         ),
@@ -320,12 +349,22 @@ class _NotesPageState extends State<NotesPage> {
                             await _load();
                           },
                     icon: const Icon(Icons.chevron_right),
+                    tooltip: '后一天',
                   ),
                 ],
               ),
             ),
           ),
         ),
+        if (!isToday)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: TextButton.icon(
+              onPressed: () => _jumpTo(today),
+              icon: const Icon(Icons.today, size: 18),
+              label: const Text('回到今天'),
+            ),
+          ),
         // 当天笔记列表
         Expanded(
           child: _notes.isEmpty
@@ -333,11 +372,13 @@ class _NotesPageState extends State<NotesPage> {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Text(
-                        '📖',
-                        style: Theme.of(context).textTheme.headlineLarge,
+                      ClayAvatar(
+                        icon: Icons.auto_stories,
+                        color: scheme.primary,
+                        size: 72,
+                        iconSize: 34,
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 14),
                       Text(
                         '这一天还没有笔记',
                         style: Theme.of(context).textTheme.bodyMedium,
@@ -348,39 +389,37 @@ class _NotesPageState extends State<NotesPage> {
               : ListView.separated(
                   padding: const EdgeInsets.all(16),
                   itemCount: _notes.length,
-                  separatorBuilder: (_, _) => const SizedBox(height: 8),
+                  separatorBuilder: (_, _) => const SizedBox(height: 10),
                   itemBuilder: (context, index) {
                     final note = _notes[index];
+                    final time =
+                        '${note.createdAt.hour.toString().padLeft(2, '0')}:'
+                        '${note.createdAt.minute.toString().padLeft(2, '0')}';
                     return Card(
+                      margin: EdgeInsets.zero,
                       child: Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 12, 4, 12),
+                        padding: const EdgeInsets.fromLTRB(16, 14, 4, 14),
                         child: Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Expanded(
                               child: InkWell(
                                 onTap: () => _write(existing: note),
+                                borderRadius: BorderRadius.circular(14),
                                 child: Padding(
                                   padding: const EdgeInsets.symmetric(
-                                    vertical: 4,
+                                    vertical: 2,
                                   ),
                                   child: Column(
                                     crossAxisAlignment:
                                         CrossAxisAlignment.start,
                                     children: [
-                                      Text(
-                                        '${note.createdAt.hour.toString().padLeft(2, '0')}:'
-                                        '${note.createdAt.minute.toString().padLeft(2, '0')}',
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .labelSmall
-                                            ?.copyWith(
-                                              color: Theme.of(
-                                                context,
-                                              ).hintColor,
-                                            ),
+                                      TagPill(
+                                        icon: Icons.schedule,
+                                        text: time,
+                                        color: scheme.onSurfaceVariant,
                                       ),
-                                      const SizedBox(height: 4),
+                                      const SizedBox(height: 8),
                                       Text(note.content),
                                     ],
                                   ),
@@ -390,6 +429,7 @@ class _NotesPageState extends State<NotesPage> {
                             IconButton(
                               onPressed: () => _delete(note),
                               icon: const Icon(Icons.delete_outline),
+                              tooltip: '删除笔记',
                             ),
                           ],
                         ),

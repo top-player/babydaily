@@ -2,13 +2,19 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:babydaily/src/data/database.dart';
 import 'package:babydaily/src/domain/attributes.dart';
 import 'package:babydaily/src/domain/enums.dart';
 import 'package:babydaily/src/domain/game_service.dart';
 import 'package:babydaily/src/ui/app_controller.dart';
+import 'package:babydaily/src/ui/clay.dart';
 import 'package:babydaily/src/ui/feedback.dart';
 import 'package:babydaily/src/ui/habit_detail_page.dart';
+import 'package:babydaily/src/ui/theme.dart';
+
+const Color _kHabitFlame = Color(0xFFE8710A);
+const Color _kHabitWeekly = kHealthColor;
 
 class HabitsPage extends StatefulWidget {
   const HabitsPage({super.key});
@@ -33,8 +39,7 @@ class _HabitsPageState extends State<HabitsPage> {
     final all = await service.habits(includeArchived: true);
     final statuses = <int, HabitStatus>{};
     for (final h in all) {
-      statuses[h.id] =
-          await service.habitStatus(h.id, now: DateTime.now());
+      statuses[h.id] = await service.habitStatus(h.id, now: DateTime.now());
     }
     if (mounted) {
       setState(() {
@@ -47,10 +52,13 @@ class _HabitsPageState extends State<HabitsPage> {
 
   Future<void> _checkIn(Habit habit) async {
     final controller = AppScope.of(context);
-    final outcome =
-        await controller.service.checkInHabit(habit.id, now: DateTime.now());
+    final outcome = await controller.service.checkInHabit(
+      habit.id,
+      now: DateTime.now(),
+    );
     if (outcome == null) return;
     if (mounted) {
+      HapticFeedback.lightImpact();
       showGrowthFeedback(context, outcome);
       showMilestoneFeedback(context, outcome.milestones);
       if ({7, 30, 100}.contains(outcome.streak)) {
@@ -63,48 +71,98 @@ class _HabitsPageState extends State<HabitsPage> {
 
   @override
   Widget build(BuildContext context) {
-    final doneCount =
-        _habits.where((h) => (_statusByHabit[h.id]?.checkedToday ?? false)).length;
+    final doneCount = _habits
+        .where((h) => (_statusByHabit[h.id]?.checkedToday ?? false))
+        .length;
+    final scheme = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(title: const Text('习惯')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          if (_habits.isNotEmpty)
-            Card(
-              color: Theme.of(context).colorScheme.primaryContainer,
+          if (_habits.isNotEmpty) ...[
+            HeroCard(
+              colors: [scheme.primaryContainer, scheme.secondaryContainer],
               child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Text(
-                  '今日打卡 $doneCount / ${_habits.length} 🔥',
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleMedium
-                      ?.copyWith(fontWeight: FontWeight.bold),
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 18),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          width: 40,
+                          height: 40,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: scheme.surface.withValues(alpha: 0.55),
+                          ),
+                          child: const Icon(
+                            Icons.local_fire_department,
+                            color: _kHabitFlame,
+                            size: 22,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            '今日打卡 $doneCount / ${_habits.length}',
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(
+                                  fontWeight: FontWeight.w800,
+                                  color: scheme.onPrimaryContainer,
+                                ),
+                          ),
+                        ),
+                        Text(
+                          '🔥',
+                          style: Theme.of(context).textTheme.titleLarge,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(999),
+                      child: LinearProgressIndicator(
+                        value: _habits.isEmpty ? 0 : doneCount / _habits.length,
+                        minHeight: 10,
+                        backgroundColor: scheme.surface.withValues(alpha: 0.5),
+                        valueColor: AlwaysStoppedAnimation<Color>(_kHabitFlame),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
+            const SizedBox(height: 14),
+          ],
           if (_habits.isEmpty && _archived.isEmpty)
             Padding(
-              padding: const EdgeInsets.all(32),
+              padding: const EdgeInsets.symmetric(vertical: 48),
               child: Column(
                 children: [
-                  Text('🔥', style: Theme.of(context).textTheme.headlineLarge),
-                  const SizedBox(height: 8),
-                  Text('还没有习惯，点右下角养一个吧',
-                      style: Theme.of(context).textTheme.bodyMedium),
+                  ClayAvatar(
+                    icon: Icons.local_fire_department,
+                    color: _kHabitFlame,
+                    size: 76,
+                    iconSize: 36,
+                  ),
+                  const SizedBox(height: 14),
+                  Text(
+                    '还没有习惯，点右下角养一个吧',
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
                 ],
               ),
             ),
           for (final h in _habits) _habitCard(h),
           if (_archived.isNotEmpty) ...[
-            Padding(
-              padding: const EdgeInsets.only(top: 12, bottom: 8),
-              child: Text('🗄️ 已归档',
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleMedium
-                      ?.copyWith(fontWeight: FontWeight.bold)),
+            SectionHeader(
+              icon: Icons.inventory_2_outlined,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+              title: '已归档',
+              subtitle: '暂时休息的习惯',
             ),
             for (final h in _archived) _habitCard(h, archived: true),
           ],
@@ -123,68 +181,137 @@ class _HabitsPageState extends State<HabitsPage> {
   }
 
   Widget _habitCard(Habit h, {bool archived = false}) {
-    final status = _statusByHabit[h.id] ??
+    final status =
+        _statusByHabit[h.id] ??
         const HabitStatus(
-            streak: 0, cumulative: 0, checkedToday: false, checkinDates: []);
+          streak: 0,
+          cumulative: 0,
+          checkedToday: false,
+          checkinDates: [],
+        );
     final unit = h.frequencyType == HabitFrequency.daily ? '天' : '周';
+    final accent = h.frequencyType == HabitFrequency.daily
+        ? _kHabitFlame
+        : _kHabitWeekly;
     return Card(
-      margin: const EdgeInsets.only(bottom: 10),
+      margin: const EdgeInsets.only(bottom: 12),
       child: InkWell(
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(22),
         onTap: () async {
-          await Navigator.of(context).push(MaterialPageRoute<void>(
-            builder: (_) => HabitDetailPage(habit: h),
-          ));
+          await Navigator.of(context).push(
+            MaterialPageRoute<void>(builder: (_) => HabitDetailPage(habit: h)),
+          );
           await _load();
         },
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
+          padding: const EdgeInsets.fromLTRB(16, 14, 8, 14),
           child: Opacity(
             opacity: archived ? 0.55 : 1,
             child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
+                ClayAvatar(
+                  icon: h.frequencyType == HabitFrequency.daily
+                      ? Icons.local_fire_department
+                      : Icons.event_repeat,
+                  color: accent,
+                  size: 44,
+                  iconSize: 22,
+                ),
+                const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(h.name,
-                          style: Theme.of(context)
-                              .textTheme
-                              .titleMedium
-                              ?.copyWith(fontWeight: FontWeight.w600)),
-                      if (h.description.isNotEmpty)
-                        Text(h.description,
-                            style: Theme.of(context).textTheme.bodySmall),
-                      const SizedBox(height: 4),
                       Text(
-                        '🔥 连续 ${status.streak} $unit · 累计 ${status.cumulative} 次'
-                        '${h.frequencyType == HabitFrequency.weekly ? '（每周 ${h.timesPerWeek} 次）' : ''}',
-                        style: Theme.of(context).textTheme.bodySmall,
+                        h.name,
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.w800),
                       ),
-                      if (h.rewardDiscipline > 0 ||
-                          h.rewardHealth > 0 ||
-                          h.rewardCharm > 0)
-                        Text(
-                          [
-                            if (h.rewardHealth > 0) '健康+${h.rewardHealth}',
-                            if (h.rewardDiscipline > 0)
-                              '自律+${h.rewardDiscipline}',
-                            if (h.rewardCharm > 0) '魅力+${h.rewardCharm}',
-                          ].join(' '),
-                          style: Theme.of(context).textTheme.bodySmall,
+                      if (h.description.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          child: Text(
+                            h.description,
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
                         ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 4,
+                        children: [
+                          TagPill(
+                            icon: Icons.local_fire_department,
+                            text: '连续 ${status.streak} $unit',
+                            color: _kHabitFlame,
+                          ),
+                          TagPill(
+                            icon: Icons.check_circle_outline,
+                            text: '累计 ${status.cumulative} 次',
+                            color: _kHabitWeekly,
+                          ),
+                          if (h.frequencyType == HabitFrequency.weekly &&
+                              h.timesPerWeek > 0)
+                            TagPill(
+                              text: '每周 ${h.timesPerWeek} 次',
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                          if (h.rewardDiscipline > 0 ||
+                              h.rewardHealth > 0 ||
+                              h.rewardCharm > 0)
+                            TagPill(
+                              text: [
+                                if (h.rewardHealth > 0) '健康+${h.rewardHealth}',
+                                if (h.rewardDiscipline > 0)
+                                  '自律+${h.rewardDiscipline}',
+                                if (h.rewardCharm > 0) '魅力+${h.rewardCharm}',
+                              ].join(' '),
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                        ],
+                      ),
                     ],
                   ),
                 ),
                 if (!archived)
                   Padding(
-                    padding: const EdgeInsets.only(right: 4),
+                    padding: const EdgeInsets.only(left: 8, right: 4),
                     child: status.checkedToday
-                        ? const Chip(
-                            avatar: Icon(Icons.check, size: 16),
-                            label: Text('已打卡'),
+                        ? Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 10,
+                            ),
+                            decoration: BoxDecoration(
+                              color: kHealthColor.withValues(alpha: 0.13),
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(
+                                  Icons.check_circle,
+                                  size: 18,
+                                  color: kHealthColor,
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  '已打卡',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w800,
+                                    color: kHealthColor,
+                                  ),
+                                ),
+                              ],
+                            ),
                           )
                         : FilledButton(
+                            style: FilledButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 12,
+                              ),
+                            ),
                             onPressed: () => _checkIn(h),
                             child: const Text('打卡'),
                           ),
@@ -246,20 +373,24 @@ class _HabitsPageState extends State<HabitsPage> {
   Future<void> _showHabitDialog(BuildContext context, {Habit? habit}) async {
     final controller = AppScope.of(context);
     final nameController = TextEditingController(text: habit?.name ?? '');
-    final descController =
-        TextEditingController(text: habit?.description ?? '');
-    final healthController =
-        TextEditingController(text: habit != null && habit.rewardHealth > 0
-            ? '${habit.rewardHealth}'
-            : '0');
+    final descController = TextEditingController(
+      text: habit?.description ?? '',
+    );
+    final healthController = TextEditingController(
+      text: habit != null && habit.rewardHealth > 0
+          ? '${habit.rewardHealth}'
+          : '0',
+    );
     final disciplineController = TextEditingController(
-        text: habit != null && habit.rewardDiscipline > 0
-            ? '${habit.rewardDiscipline}'
-            : '1');
+      text: habit != null && habit.rewardDiscipline > 0
+          ? '${habit.rewardDiscipline}'
+          : '1',
+    );
     final charmController = TextEditingController(
-        text: habit != null && habit.rewardCharm > 0
-            ? '${habit.rewardCharm}'
-            : '0');
+      text: habit != null && habit.rewardCharm > 0
+          ? '${habit.rewardCharm}'
+          : '0',
+    );
     var frequency = habit?.frequencyType ?? HabitFrequency.daily;
     var timesPerWeek = habit?.timesPerWeek ?? 3;
 
@@ -286,9 +417,13 @@ class _HabitsPageState extends State<HabitsPage> {
                 SegmentedButton<HabitFrequency>(
                   segments: const [
                     ButtonSegment(
-                        value: HabitFrequency.daily, label: Text('每日')),
+                      value: HabitFrequency.daily,
+                      label: Text('每日'),
+                    ),
                     ButtonSegment(
-                        value: HabitFrequency.weekly, label: Text('每周 N 次')),
+                      value: HabitFrequency.weekly,
+                      label: Text('每周 N 次'),
+                    ),
                   ],
                   selected: {frequency},
                   onSelectionChanged: (s) =>
@@ -298,34 +433,40 @@ class _HabitsPageState extends State<HabitsPage> {
                   const SizedBox(height: 12),
                   Row(
                     children: [
-                      Text('每周次数',
-                          style: Theme.of(context).textTheme.titleSmall),
+                      Text(
+                        '每周次数',
+                        style: Theme.of(context).textTheme.titleSmall,
+                      ),
                       const SizedBox(width: 12),
                       IconButton(
                         onPressed: () => setDialogState(
-                            () => timesPerWeek = (timesPerWeek - 1).clamp(1, 7)),
+                          () => timesPerWeek = (timesPerWeek - 1).clamp(1, 7),
+                        ),
                         icon: const Icon(Icons.remove_circle_outline),
                       ),
-                      Text('$timesPerWeek 次',
-                          style: Theme.of(context).textTheme.titleLarge),
+                      Text(
+                        '$timesPerWeek 次',
+                        style: Theme.of(context).textTheme.titleLarge,
+                      ),
                       IconButton(
                         onPressed: () => setDialogState(
-                            () => timesPerWeek = (timesPerWeek + 1).clamp(1, 7)),
+                          () => timesPerWeek = (timesPerWeek + 1).clamp(1, 7),
+                        ),
                         icon: const Icon(Icons.add_circle_outline),
                       ),
                     ],
                   ),
                 ],
                 const SizedBox(height: 12),
-                Text('打卡奖励（属性，经验固定 +5）',
-                    style: Theme.of(context).textTheme.titleSmall),
+                Text(
+                  '打卡奖励（属性，经验固定 +5）',
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
                 Row(
                   children: [
-                    Expanded(
-                        child: _field('健康', healthController)),
+                    Expanded(child: _field('健康', healthController)),
                     const SizedBox(width: 8),
-                    Expanded(
-                        child: _field('自律', disciplineController)),
+                    Expanded(child: _field('自律', disciplineController)),
                     const SizedBox(width: 8),
                     Expanded(child: _field('魅力', charmController)),
                   ],
@@ -335,10 +476,7 @@ class _HabitsPageState extends State<HabitsPage> {
                     padding: const EdgeInsets.only(top: 8),
                     child: Text(
                       '修改频率或每周次数会重新计算连续天数（累计保留）。',
-                      style: Theme.of(context)
-                          .textTheme
-                          .bodySmall
-                          ?.copyWith(color: Theme.of(context).hintColor),
+                      style: Theme.of(context).textTheme.bodySmall,
                     ),
                   ),
               ],
@@ -363,8 +501,10 @@ class _HabitsPageState extends State<HabitsPage> {
       if (name.isEmpty) return;
       final reward = AttributeDelta(
         health: (int.tryParse(healthController.text) ?? 0).clamp(0, 100),
-        discipline:
-            (int.tryParse(disciplineController.text) ?? 0).clamp(0, 100),
+        discipline: (int.tryParse(disciplineController.text) ?? 0).clamp(
+          0,
+          100,
+        ),
         charm: (int.tryParse(charmController.text) ?? 0).clamp(0, 100),
       );
       if (habit == null) {
@@ -372,9 +512,7 @@ class _HabitsPageState extends State<HabitsPage> {
           name: name,
           description: descController.text.trim(),
           frequencyType: frequency,
-          timesPerWeek: frequency == HabitFrequency.weekly
-              ? timesPerWeek
-              : 1,
+          timesPerWeek: frequency == HabitFrequency.weekly ? timesPerWeek : 1,
           reward: reward,
         );
       } else {
@@ -383,9 +521,7 @@ class _HabitsPageState extends State<HabitsPage> {
           name: name,
           description: descController.text.trim(),
           frequencyType: frequency,
-          timesPerWeek: frequency == HabitFrequency.weekly
-              ? timesPerWeek
-              : 1,
+          timesPerWeek: frequency == HabitFrequency.weekly ? timesPerWeek : 1,
           reward: reward,
           now: DateTime.now(),
         );

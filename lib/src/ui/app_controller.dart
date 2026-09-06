@@ -64,8 +64,7 @@ class AppController extends ChangeNotifier {
     await service.setScene(value);
   }
 
-  bool get onboardingDone =>
-      _initialized && (character != null); // 主角存在即视为引导完成
+  bool get onboardingDone => _initialized && (character != null); // 主角存在即视为引导完成
 
   /// 任意写操作后刷新主角快照并通知（属性/经验变化同步到主角页）。
   Future<void> refresh() async {
@@ -84,7 +83,6 @@ class AppController extends ChangeNotifier {
 class AppScope extends InheritedNotifier<AppController> {
   const AppScope({super.key, required super.notifier, required super.child});
 
-  static AppController of(BuildContext context) => context
-      .dependOnInheritedWidgetOfExactType<AppScope>()!
-      .notifier!;
+  static AppController of(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<AppScope>()!.notifier!;
 }

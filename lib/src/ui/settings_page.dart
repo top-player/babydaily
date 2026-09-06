@@ -7,7 +7,9 @@ import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:babydaily/src/ui/app_controller.dart';
+import 'package:babydaily/src/ui/clay.dart';
 import 'package:babydaily/src/ui/feedback.dart';
+import 'package:babydaily/src/ui/theme.dart';
 
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key});
@@ -25,28 +27,47 @@ class SettingsPage extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         children: [
           Card(
+            margin: EdgeInsets.zero,
             child: Column(
               children: [
                 ListTile(
-                  leading: const Icon(Icons.upload_outlined),
+                  leading: const ClayAvatar(
+                    icon: Icons.upload_outlined,
+                    color: kHealthColor,
+                    size: 40,
+                    iconSize: 20,
+                  ),
                   title: const Text('导出备份（JSON）'),
                   subtitle: const Text('把全部数据保存为 JSON 文件，换机时可恢复'),
                   onTap: () => _export(context),
                 ),
-                const Divider(height: 1),
+                const Divider(height: 1, indent: 68),
                 ListTile(
-                  leading: const Icon(Icons.download_outlined),
+                  leading: const ClayAvatar(
+                    icon: Icons.download_outlined,
+                    color: kDisciplineColor,
+                    size: 40,
+                    iconSize: 20,
+                  ),
                   title: const Text('导入备份'),
-                  subtitle: const Text('将备份文件改名为 babydaily_restore.json 放到应用文档目录后导入'),
+                  subtitle: const Text(
+                    '将备份文件改名为 babydaily_restore.json 放到应用文档目录后导入',
+                  ),
                   onTap: () => _import(context),
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 14),
           const Card(
+            margin: EdgeInsets.zero,
             child: ListTile(
-              leading: Icon(Icons.info_outline),
+              leading: ClayAvatar(
+                icon: Icons.info_outline,
+                color: kCharmColor,
+                size: 40,
+                iconSize: 20,
+              ),
               title: Text('宝宝日常 v1.0.0'),
               subtitle: Text('轻松治愈的个人成长 RPG\n主角 · 任务 · 习惯 · 笔记 · 场景'),
               isThreeLine: true,
@@ -63,13 +84,13 @@ class SettingsPage extends StatelessWidget {
       final json = await controller.service.exportJson();
       final dir = await _documentsDir();
       final now = DateTime.now();
-      final stamp = '${now.year}${now.month.toString().padLeft(2, '0')}'
+      final stamp =
+          '${now.year}${now.month.toString().padLeft(2, '0')}'
           '${now.day.toString().padLeft(2, '0')}_'
           '${now.hour.toString().padLeft(2, '0')}'
           '${now.minute.toString().padLeft(2, '0')}'
           '${now.second.toString().padLeft(2, '0')}';
-      final file =
-          File(p.join(dir, 'babydaily_backup_$stamp.json'));
+      final file = File(p.join(dir, 'babydaily_backup_$stamp.json'));
       await file.writeAsString(json);
       if (!context.mounted) return;
       await showDialog<void>(
@@ -82,8 +103,10 @@ class SettingsPage extends StatelessWidget {
             children: [
               const Text('备份文件已保存到：'),
               const SizedBox(height: 8),
-              SelectableText(file.path,
-                  style: Theme.of(dialogContext).textTheme.bodySmall),
+              SelectableText(
+                file.path,
+                style: Theme.of(dialogContext).textTheme.bodySmall,
+              ),
             ],
           ),
           actions: [
@@ -115,11 +138,15 @@ class SettingsPage extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('请把导出的 JSON 备份改名为 '
-                    'babydaily_restore.json，放到应用文档目录：'),
+                const Text(
+                  '请把导出的 JSON 备份改名为 '
+                  'babydaily_restore.json，放到应用文档目录：',
+                ),
                 const SizedBox(height: 8),
-                SelectableText(dir,
-                    style: Theme.of(dialogContext).textTheme.bodySmall),
+                SelectableText(
+                  dir,
+                  style: Theme.of(dialogContext).textTheme.bodySmall,
+                ),
               ],
             ),
             actions: [

@@ -44,15 +44,16 @@ class _OnboardingPageState extends State<OnboardingPage> {
     super.dispose();
   }
 
-  int _parseInt(String s, int fallback) =>
-      int.tryParse(s.trim()) ?? fallback;
+  int _parseInt(String s, int fallback) => int.tryParse(s.trim()) ?? fallback;
 
   Future<void> _createCharacter({String? name}) async {
     final controller = AppScope.of(context);
     await controller.createCharacter(
-      name: name ?? (_nameController.text.trim().isEmpty
-          ? '主角'
-          : _nameController.text.trim()),
+      name:
+          name ??
+          (_nameController.text.trim().isEmpty
+              ? '主角'
+              : _nameController.text.trim()),
       age: _age,
       gender: _gender,
     );
@@ -76,13 +77,14 @@ class _OnboardingPageState extends State<OnboardingPage> {
     final controller = AppScope.of(context);
     final name = _mainlineController.text.trim();
     if (name.isNotEmpty) {
-      final discipline =
-          _parseInt(_mainlineDisciplineController.text, 1).clamp(0, 100);
+      final discipline = _parseInt(
+        _mainlineDisciplineController.text,
+        1,
+      ).clamp(0, 100);
       final taskId = await controller.service.createTask(
         name: name,
         type: TaskType.mainline,
-        reward: AttributeDelta(
-            health: 0, discipline: discipline, charm: 0),
+        reward: AttributeDelta(health: 0, discipline: discipline, charm: 0),
       );
       final lines = _subtasksController.text
           .split('\n')
@@ -99,13 +101,14 @@ class _OnboardingPageState extends State<OnboardingPage> {
     final controller = AppScope.of(context);
     final name = _dailyController.text.trim();
     if (name.isNotEmpty) {
-      final discipline =
-          _parseInt(_dailyDisciplineController.text, 1).clamp(0, 100);
+      final discipline = _parseInt(
+        _dailyDisciplineController.text,
+        1,
+      ).clamp(0, 100);
       await controller.service.createTask(
         name: name,
         type: TaskType.daily,
-        reward: AttributeDelta(
-            health: 0, discipline: discipline, charm: 0),
+        reward: AttributeDelta(health: 0, discipline: discipline, charm: 0),
       );
     }
     if (mounted) setState(() => _step = 3);
@@ -137,12 +140,40 @@ class _OnboardingPageState extends State<OnboardingPage> {
             children: [
               Row(
                 children: [
-                  Text('🐣',
-                      style: Theme.of(context).textTheme.headlineMedium),
+                  Container(
+                    width: 44,
+                    height: 44,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Theme.of(context).colorScheme.primaryContainer,
+                      border: Border.all(
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.outlineVariant.withValues(alpha: 0.8),
+                        width: 1.2,
+                      ),
+                    ),
+                    child: const Text('🐣', style: TextStyle(fontSize: 24)),
+                  ),
                   const Spacer(),
-                  if (_step < 4)
-                    Text('${_step + 1} / 4',
-                        style: Theme.of(context).textTheme.labelLarge),
+                  Row(
+                    children: [
+                      for (var i = 0; i < 4; i++)
+                        AnimatedContainer(
+                          duration: const Duration(milliseconds: 250),
+                          margin: const EdgeInsets.symmetric(horizontal: 3),
+                          width: i == _step ? 22 : 8,
+                          height: 8,
+                          decoration: BoxDecoration(
+                            color: i == _step
+                                ? Theme.of(context).colorScheme.primary
+                                : Theme.of(context).colorScheme.outlineVariant,
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                        ),
+                    ],
+                  ),
                 ],
               ),
               Expanded(child: _buildStep(context)),
@@ -174,175 +205,211 @@ class _OnboardingPageState extends State<OnboardingPage> {
   }
 
   VoidCallback? _onNext() => switch (_step) {
-        0 => _finishStep1,
-        1 => _finishStep2,
-        2 => _finishStep3,
-        3 => _finishStep4,
-        _ => null,
-      };
+    0 => _finishStep1,
+    1 => _finishStep2,
+    2 => _finishStep3,
+    3 => _finishStep4,
+    _ => null,
+  };
 
   VoidCallback? _onSkip() => switch (_step) {
-        0 => _skipStep1,
-        1 => () => setState(() => _step = 2),
-        2 => () => setState(() => _step = 3),
-        3 => () => setState(() => _step = 4),
-        _ => null,
-      };
+    0 => _skipStep1,
+    1 => () => setState(() => _step = 2),
+    2 => () => setState(() => _step = 3),
+    3 => () => setState(() => _step = 4),
+    _ => null,
+  };
 
   Widget _buildStep(BuildContext context) {
     switch (_step) {
       case 0:
-        return _stepTitle(context, '先认识一下主角', '资料以后随时可改',
-            children: [
-              TextField(
-                controller: _nameController,
-                maxLength: 12,
-                inputFormatters: [LengthLimitingTextInputFormatter(12)],
-                decoration: const InputDecoration(
-                    labelText: '姓名', hintText: '给自己起个名字吧'),
+        return _stepTitle(
+          context,
+          '先认识一下主角',
+          '资料以后随时可改',
+          children: [
+            TextField(
+              controller: _nameController,
+              maxLength: 12,
+              inputFormatters: [LengthLimitingTextInputFormatter(12)],
+              decoration: const InputDecoration(
+                labelText: '姓名',
+                hintText: '给自己起个名字吧',
               ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Text('年龄', style: Theme.of(context).textTheme.titleSmall),
+                const SizedBox(width: 12),
+                IconButton(
+                  onPressed: () =>
+                      setState(() => _age = (_age - 1).clamp(1, 120)),
+                  icon: const Icon(Icons.remove_circle_outline),
+                ),
+                Text('$_age', style: Theme.of(context).textTheme.titleLarge),
+                IconButton(
+                  onPressed: () =>
+                      setState(() => _age = (_age + 1).clamp(1, 120)),
+                  icon: const Icon(Icons.add_circle_outline),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            SegmentedButton<Gender>(
+              segments: const [
+                ButtonSegment(value: Gender.male, label: Text('男')),
+                ButtonSegment(value: Gender.female, label: Text('女')),
+                ButtonSegment(value: Gender.secret, label: Text('保密')),
+              ],
+              selected: {_gender},
+              onSelectionChanged: (s) => setState(() => _gender = s.first),
+            ),
+          ],
+        );
+      case 1:
+        return _stepTitle(
+          context,
+          '立一个小目标（主线）',
+          '重要的事，拆成小步子慢慢来',
+          children: [
+            TextField(
+              controller: _mainlineController,
+              maxLength: 30,
+              decoration: const InputDecoration(
+                labelText: '主线任务',
+                hintText: '比如：读完一本书',
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _subtasksController,
+              maxLines: 3,
+              maxLength: 200,
+              decoration: const InputDecoration(
+                labelText: '拆分子项（可选）',
+                hintText: '每行一个，比如：\n读第一章\n读第二章',
+                alignLabelWithHint: true,
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _mainlineDisciplineController,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                labelText: '完成奖励 · 自律值',
+                helperText: '最后一个子项完成时自动发放；经验固定 +50',
+              ),
+            ),
+          ],
+        );
+      case 2:
+        return _stepTitle(
+          context,
+          '定一个每日任务',
+          '每天 0 点重置；未完成会扣除对应属性哦',
+          children: [
+            TextField(
+              controller: _dailyController,
+              maxLength: 30,
+              decoration: const InputDecoration(
+                labelText: '每日任务',
+                hintText: '比如：早起喝水',
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _dailyDisciplineController,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                labelText: '完成奖励 · 自律值',
+                helperText: '提示：完成后 +N 自律；未完成 0 点扣 N 自律',
+              ),
+            ),
+          ],
+        );
+      case 3:
+        return _stepTitle(
+          context,
+          '养一个好习惯',
+          '每天打卡，看着连续天数长大',
+          children: [
+            TextField(
+              controller: _habitController,
+              maxLength: 30,
+              decoration: const InputDecoration(
+                labelText: '习惯',
+                hintText: '比如：早睡打卡',
+              ),
+            ),
+            const SizedBox(height: 12),
+            SegmentedButton<HabitFrequency>(
+              segments: const [
+                ButtonSegment(value: HabitFrequency.daily, label: Text('每日')),
+                ButtonSegment(
+                  value: HabitFrequency.weekly,
+                  label: Text('每周 N 次'),
+                ),
+              ],
+              selected: {_habitFrequency},
+              onSelectionChanged: (s) =>
+                  setState(() => _habitFrequency = s.first),
+            ),
+            if (_habitFrequency == HabitFrequency.weekly) ...[
               const SizedBox(height: 12),
               Row(
                 children: [
-                  Text('年龄', style: Theme.of(context).textTheme.titleSmall),
+                  Text('每周次数', style: Theme.of(context).textTheme.titleSmall),
                   const SizedBox(width: 12),
                   IconButton(
-                    onPressed: () => setState(() => _age = (_age - 1).clamp(1, 120)),
+                    onPressed: () => setState(
+                      () => _timesPerWeek = (_timesPerWeek - 1).clamp(1, 7),
+                    ),
                     icon: const Icon(Icons.remove_circle_outline),
                   ),
-                  Text('$_age',
-                      style: Theme.of(context).textTheme.titleLarge),
+                  Text(
+                    '$_timesPerWeek 次',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
                   IconButton(
-                    onPressed: () => setState(() => _age = (_age + 1).clamp(1, 120)),
+                    onPressed: () => setState(
+                      () => _timesPerWeek = (_timesPerWeek + 1).clamp(1, 7),
+                    ),
                     icon: const Icon(Icons.add_circle_outline),
                   ),
                 ],
               ),
-              const SizedBox(height: 12),
-              SegmentedButton<Gender>(
-                segments: const [
-                  ButtonSegment(value: Gender.male, label: Text('男')),
-                  ButtonSegment(value: Gender.female, label: Text('女')),
-                  ButtonSegment(value: Gender.secret, label: Text('保密')),
-                ],
-                selected: {_gender},
-                onSelectionChanged: (s) => setState(() => _gender = s.first),
-              ),
-            ]);
-      case 1:
-        return _stepTitle(context, '立一个小目标（主线）', '重要的事，拆成小步子慢慢来',
-            children: [
-              TextField(
-                controller: _mainlineController,
-                maxLength: 30,
-                decoration: const InputDecoration(
-                    labelText: '主线任务', hintText: '比如：读完一本书'),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _subtasksController,
-                maxLines: 3,
-                maxLength: 200,
-                decoration: const InputDecoration(
-                  labelText: '拆分子项（可选）',
-                  hintText: '每行一个，比如：\n读第一章\n读第二章',
-                  alignLabelWithHint: true,
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _mainlineDisciplineController,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: '完成奖励 · 自律值',
-                  helperText: '最后一个子项完成时自动发放；经验固定 +50',
-                ),
-              ),
-            ]);
-      case 2:
-        return _stepTitle(context, '定一个每日任务', '每天 0 点重置；未完成会扣除对应属性哦',
-            children: [
-              TextField(
-                controller: _dailyController,
-                maxLength: 30,
-                decoration: const InputDecoration(
-                    labelText: '每日任务', hintText: '比如：早起喝水'),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _dailyDisciplineController,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: '完成奖励 · 自律值',
-                  helperText: '提示：完成后 +N 自律；未完成 0 点扣 N 自律',
-                ),
-              ),
-            ]);
-      case 3:
-        return _stepTitle(context, '养一个好习惯', '每天打卡，看着连续天数长大',
-            children: [
-              TextField(
-                controller: _habitController,
-                maxLength: 30,
-                decoration: const InputDecoration(
-                    labelText: '习惯', hintText: '比如：早睡打卡'),
-              ),
-              const SizedBox(height: 12),
-              SegmentedButton<HabitFrequency>(
-                segments: const [
-                  ButtonSegment(
-                      value: HabitFrequency.daily, label: Text('每日')),
-                  ButtonSegment(
-                      value: HabitFrequency.weekly, label: Text('每周 N 次')),
-                ],
-                selected: {_habitFrequency},
-                onSelectionChanged: (s) =>
-                    setState(() => _habitFrequency = s.first),
-              ),
-              if (_habitFrequency == HabitFrequency.weekly) ...[
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Text('每周次数',
-                        style: Theme.of(context).textTheme.titleSmall),
-                    const SizedBox(width: 12),
-                    IconButton(
-                      onPressed: () => setState(
-                          () => _timesPerWeek = (_timesPerWeek - 1).clamp(1, 7)),
-                      icon: const Icon(Icons.remove_circle_outline),
-                    ),
-                    Text('$_timesPerWeek 次',
-                        style: Theme.of(context).textTheme.titleLarge),
-                    IconButton(
-                      onPressed: () => setState(
-                          () => _timesPerWeek = (_timesPerWeek + 1).clamp(1, 7)),
-                      icon: const Icon(Icons.add_circle_outline),
-                    ),
-                  ],
-                ),
-              ],
-              const SizedBox(height: 8),
-              Text('打卡默认 +1 自律、+5 经验；连续 10/20/30 天还有一次性里程碑奖励。',
-                  style: Theme.of(context).textTheme.bodySmall),
-            ]);
+            ],
+            const SizedBox(height: 8),
+            Text(
+              '打卡默认 +1 自律、+5 经验；连续 10/20/30 天还有一次性里程碑奖励。',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+        );
       default:
         return const SizedBox.shrink();
     }
   }
 
-  Widget _stepTitle(BuildContext context, String title, String subtitle,
-      {required List<Widget> children}) {
+  Widget _stepTitle(
+    BuildContext context,
+    String title,
+    String subtitle, {
+    required List<Widget> children,
+  }) {
     return SingleChildScrollView(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(title, style: Theme.of(context).textTheme.headlineSmall),
           const SizedBox(height: 4),
-          Text(subtitle,
-              style: Theme.of(context)
-                  .textTheme
-                  .bodyMedium
-                  ?.copyWith(color: Theme.of(context).hintColor)),
+          Text(
+            subtitle,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: Theme.of(context).hintColor,
+            ),
+          ),
           const SizedBox(height: 20),
           ...children,
         ],

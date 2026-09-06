@@ -6,6 +6,7 @@ import 'package:babydaily/src/domain/enums.dart';
 import 'package:babydaily/src/domain/game_service.dart';
 import 'package:babydaily/src/domain/xp_economy.dart';
 import 'package:babydaily/src/ui/app_controller.dart';
+import 'package:babydaily/src/ui/clay.dart';
 import 'package:babydaily/src/ui/settings_page.dart';
 import 'package:babydaily/src/ui/theme.dart';
 
@@ -40,30 +41,52 @@ class CharacterPage extends StatelessWidget {
     final controller = AppScope.of(context);
     final c = controller.character;
     final atmosphere = atmosphereOf(controller.scene);
+    final scheme = Theme.of(context).colorScheme;
 
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        // 问候
-        Card(
-          color: Theme.of(context).colorScheme.primaryContainer,
+        // 问候英雄卡
+        HeroCard(
+          colors: [scheme.primaryContainer, scheme.secondaryContainer],
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 12, 8, 12),
+            padding: const EdgeInsets.fromLTRB(20, 18, 12, 18),
             child: Row(
               children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: scheme.surface.withValues(alpha: 0.55),
+                  ),
+                  child: Text(
+                    atmosphere.emoji,
+                    style: const TextStyle(fontSize: 24),
+                  ),
+                ),
+                const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        '${atmosphere.emoji} ${atmosphere.greeting}',
+                        atmosphere.greeting,
                         style: Theme.of(context).textTheme.titleMedium
-                            ?.copyWith(fontWeight: FontWeight.bold),
+                            ?.copyWith(
+                              fontWeight: FontWeight.w800,
+                              color: scheme.onPrimaryContainer,
+                            ),
                       ),
                       const SizedBox(height: 4),
                       Text(
                         atmosphere.tip,
-                        style: Theme.of(context).textTheme.bodySmall,
+                        style: TextStyle(
+                          color: scheme.onPrimaryContainer.withValues(
+                            alpha: 0.8,
+                          ),
+                        ),
                       ),
                     ],
                   ),
@@ -81,9 +104,9 @@ class CharacterPage extends StatelessWidget {
             ),
           ),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 14),
         if (c != null) _profileCard(context, controller, c),
-        const SizedBox(height: 12),
+        const SizedBox(height: 14),
         _sceneCard(context, controller),
       ],
     );
@@ -94,11 +117,11 @@ class CharacterPage extends StatelessWidget {
     AppController controller,
     CharacterSnapshot c,
   ) {
+    final scheme = Theme.of(context).colorScheme;
     final level = levelForXp(c.xp);
     final into = xpIntoLevel(c.xp);
     final needed = xpNeededForNext(c.xp);
     return Card(
-      color: Theme.of(context).colorScheme.surfaceContainerLow,
       child: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
@@ -106,11 +129,24 @@ class CharacterPage extends StatelessWidget {
           children: [
             Row(
               children: [
-                Text(
-                  _genderEmoji(c.gender),
-                  style: const TextStyle(fontSize: 44),
+                Container(
+                  width: 60,
+                  height: 60,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: scheme.primaryContainer,
+                    border: Border.all(
+                      color: scheme.outlineVariant.withValues(alpha: 0.8),
+                      width: 1.2,
+                    ),
+                  ),
+                  child: Text(
+                    _genderEmoji(c.gender),
+                    style: const TextStyle(fontSize: 32),
+                  ),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: 14),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -122,8 +158,7 @@ class CharacterPage extends StatelessWidget {
                               c.name,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context).textTheme.titleLarge
-                                  ?.copyWith(fontWeight: FontWeight.bold),
+                              style: Theme.of(context).textTheme.titleLarge,
                             ),
                           ),
                           const SizedBox(width: 8),
@@ -133,10 +168,11 @@ class CharacterPage extends StatelessWidget {
                           ),
                         ],
                       ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Lv.$level ${titleForLevel(level)}',
-                        style: Theme.of(context).textTheme.titleSmall,
+                      const SizedBox(height: 6),
+                      TagPill(
+                        icon: Icons.stars,
+                        text: 'Lv.$level ${titleForLevel(level)}',
+                        color: scheme.primary,
                       ),
                     ],
                   ),
@@ -148,36 +184,59 @@ class CharacterPage extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 18),
             if (level < maxLevel) ...[
               ClipRRect(
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(999),
                 child: LinearProgressIndicator(
                   value: needed == 0 ? 1 : into / (into + needed),
-                  minHeight: 10,
-                  backgroundColor: Theme.of(
-                    context,
-                  ).colorScheme.surfaceContainerHighest,
+                  minHeight: 12,
                 ),
               ),
-              const SizedBox(height: 4),
-              Text(
-                '经验 $into / ${into + needed}（累计 ${c.xp}）',
-                style: Theme.of(context).textTheme.bodySmall,
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  Text(
+                    '经验 $into / ${into + needed}',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                  const Spacer(),
+                  Text(
+                    '累计 ${c.xp} EXP',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
               ),
             ] else
-              Text(
-                '👑 满级！累计经验 ${c.xp}',
-                style: Theme.of(
-                  context,
-                ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+              TagPill(
+                icon: Icons.emoji_events,
+                text: '👑 满级！累计经验 ${c.xp}',
+                color: scheme.primary,
               ),
-            const SizedBox(height: 16),
-            _attributeBar(context, '健康值', '💪', c.health),
-            const SizedBox(height: 8),
-            _attributeBar(context, '自律值', '🎯', c.discipline),
-            const SizedBox(height: 8),
-            _attributeBar(context, '魅力值', '✨', c.charm),
+            const SizedBox(height: 18),
+            _attributeBar(
+              context,
+              '健康值',
+              Icons.favorite,
+              kHealthColor,
+              c.health,
+            ),
+            const SizedBox(height: 12),
+            _attributeBar(
+              context,
+              '自律值',
+              Icons.bolt,
+              kDisciplineColor,
+              c.discipline,
+            ),
+            const SizedBox(height: 12),
+            _attributeBar(
+              context,
+              '魅力值',
+              Icons.auto_awesome,
+              kCharmColor,
+              c.charm,
+            ),
           ],
         ),
       ),
@@ -187,54 +246,60 @@ class CharacterPage extends StatelessWidget {
   Widget _attributeBar(
     BuildContext context,
     String label,
-    String emoji,
+    IconData icon,
+    Color color,
     int value,
   ) {
     return Row(
       children: [
-        Text('$emoji $label', style: Theme.of(context).textTheme.titleSmall),
-        const SizedBox(width: 12),
+        ClayAvatar(icon: icon, color: color, size: 36, iconSize: 19),
+        const SizedBox(width: 10),
+        SizedBox(
+          width: 56,
+          child: Text(label, style: Theme.of(context).textTheme.titleSmall),
+        ),
+        const SizedBox(width: 10),
         Expanded(
           child: ClipRRect(
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(999),
             child: LinearProgressIndicator(
               value: value / 100,
-              minHeight: 10,
-              backgroundColor: Theme.of(
-                context,
-              ).colorScheme.surfaceContainerHighest,
+              minHeight: 12,
+              valueColor: AlwaysStoppedAnimation<Color>(color),
             ),
           ),
         ),
         const SizedBox(width: 12),
-        SizedBox(
-          width: 76,
-          child: Text(
-            '$value · ${tierLabel(label, value)}',
-            textAlign: TextAlign.right,
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-        ),
+        TagPill(text: '$value · ${tierLabel(label, value)}', color: color),
       ],
     );
   }
 
   Widget _sceneCard(BuildContext context, AppController controller) {
+    final scheme = Theme.of(context).colorScheme;
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('场景', style: Theme.of(context).textTheme.titleSmall),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                for (final atmosphere in sceneAtmospheres.values) ...[
-                  _sceneChip(context, controller, atmosphere),
-                  const SizedBox(width: 8),
+            Text('场景', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                color: scheme.surface.withValues(alpha: 0.9),
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: scheme.outlineVariant, width: 1.2),
+              ),
+              child: Row(
+                children: [
+                  for (final atmosphere in sceneAtmospheres.values)
+                    Expanded(
+                      child: _sceneSegment(context, controller, atmosphere),
+                    ),
                 ],
-              ],
+              ),
             ),
           ],
         ),
@@ -242,17 +307,39 @@ class CharacterPage extends StatelessWidget {
     );
   }
 
-  Widget _sceneChip(
+  Widget _sceneSegment(
     BuildContext context,
     AppController controller,
     SceneAtmosphere atmosphere,
   ) {
     final selected = controller.scene == atmosphere.scene;
-    return ChoiceChip(
-      avatar: Text(atmosphere.emoji),
-      label: Text(atmosphere.label),
-      selected: selected,
-      onSelected: (_) => controller.setScene(atmosphere.scene),
+    return InkWell(
+      borderRadius: BorderRadius.circular(14),
+      onTap: () => controller.setScene(atmosphere.scene),
+      child: Container(
+        constraints: const BoxConstraints(minHeight: 44),
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(14),
+          color: selected
+              ? atmosphere.seed.withValues(alpha: 0.16)
+              : Colors.transparent,
+        ),
+        child: Column(
+          children: [
+            Text(atmosphere.emoji, style: const TextStyle(fontSize: 20)),
+            const SizedBox(height: 2),
+            Text(
+              atmosphere.label,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                color: selected ? atmosphere.seed : null,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -278,6 +365,7 @@ class CharacterPage extends StatelessWidget {
                   maxLength: 12,
                   decoration: const InputDecoration(labelText: '姓名'),
                 ),
+                const SizedBox(height: 8),
                 Row(
                   children: [
                     Text('年龄', style: Theme.of(context).textTheme.titleSmall),
@@ -295,6 +383,7 @@ class CharacterPage extends StatelessWidget {
                     ),
                   ],
                 ),
+                const SizedBox(height: 8),
                 SegmentedButton<Gender>(
                   segments: const [
                     ButtonSegment(value: Gender.male, label: Text('男')),

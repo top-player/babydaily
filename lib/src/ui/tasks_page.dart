@@ -8,7 +8,14 @@ import 'package:babydaily/src/domain/enums.dart';
 import 'package:babydaily/src/domain/game_service.dart';
 import 'package:babydaily/src/domain/xp_economy.dart';
 import 'package:babydaily/src/ui/app_controller.dart';
+import 'package:babydaily/src/ui/clay.dart';
 import 'package:babydaily/src/ui/feedback.dart';
+import 'package:babydaily/src/ui/theme.dart';
+
+const Color _kMainColor = Color(0xFFC7771F);
+const Color _kSideColor = kHealthColor; // 支线=绿
+const Color _kDailyColor = kDisciplineColor; // 每日=蓝
+const Color _kArchiveColor = Color(0xFF8E7CC3);
 
 class TasksPage extends StatefulWidget {
   const TasksPage({super.key});
@@ -32,8 +39,10 @@ class _TasksPageState extends State<TasksPage> {
 
   Future<void> _load() async {
     final service = AppScope.of(context).service;
-    final mainlines =
-        await service.tasksByType(TaskType.mainline, completed: false);
+    final mainlines = await service.tasksByType(
+      TaskType.mainline,
+      completed: false,
+    );
     final sides = await service.tasksByType(TaskType.side, completed: false);
     final daily = await service.dailyTasks();
     final archive = [
@@ -66,8 +75,10 @@ class _TasksPageState extends State<TasksPage> {
 
   Future<void> _completeTask(Task task) async {
     final controller = AppScope.of(context);
-    final outcome = await controller.service
-        .completeTask(task.id, now: DateTime.now());
+    final outcome = await controller.service.completeTask(
+      task.id,
+      now: DateTime.now(),
+    );
     if (outcome == null) {
       if (mounted) setState(() {});
       return;
@@ -82,9 +93,9 @@ class _TasksPageState extends State<TasksPage> {
   }
 
   Future<void> _completeSubtask(Task mainline, Subtask subtask) async {
-    final outcome = await AppScope.of(context)
-        .service
-        .completeSubtask(subtask.id, now: DateTime.now());
+    final outcome = await AppScope.of(
+      context,
+    ).service.completeSubtask(subtask.id, now: DateTime.now());
     await _afterMutation(outcome);
     if (!mounted) return;
     if (outcome != null && outcome.xpGained == mainlineXp) {
@@ -101,31 +112,65 @@ class _TasksPageState extends State<TasksPage> {
         children: [
           if (_mainlines.isEmpty && _sides.isEmpty && _daily.isEmpty)
             Padding(
-              padding: const EdgeInsets.all(32),
+              padding: const EdgeInsets.symmetric(vertical: 48),
               child: Column(
                 children: [
-                  Text('📝',
-                      style: Theme.of(context).textTheme.headlineLarge),
-                  const SizedBox(height: 8),
-                  Text('还没有任务，点右下角加一个吧',
-                      style: Theme.of(context).textTheme.bodyMedium),
+                  ClayAvatar(
+                    icon: Icons.flag_outlined,
+                    color: Theme.of(context).colorScheme.primary,
+                    size: 76,
+                    iconSize: 36,
+                  ),
+                  const SizedBox(height: 14),
+                  Text(
+                    '还没有任务，点右下角加一个吧',
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
                 ],
               ),
             ),
           if (_mainlines.isNotEmpty) ...[
-            _sectionHeader(context, '⭐ 主线', '重要的事，慢慢来'),
+            _sectionHeader(
+              context,
+              icon: Icons.flag,
+              color: _kMainColor,
+              title: '主线',
+              subtitle: '重要的事，慢慢来',
+              count: _mainlines.length,
+            ),
             for (final t in _mainlines) _mainlineCard(t),
           ],
           if (_sides.isNotEmpty) ...[
-            _sectionHeader(context, '🌱 支线', '顺手的小事'),
+            _sectionHeader(
+              context,
+              icon: Icons.eco,
+              color: _kSideColor,
+              title: '支线',
+              subtitle: '顺手的小事',
+              count: _sides.length,
+            ),
             for (final t in _sides) _sideCard(t),
           ],
           if (_daily.isNotEmpty) ...[
-            _sectionHeader(context, '📅 每日任务', '每天 0 点重置'),
+            _sectionHeader(
+              context,
+              icon: Icons.today,
+              color: _kDailyColor,
+              title: '每日任务',
+              subtitle: '每天 0 点重置',
+              count: _daily.length,
+            ),
             for (final t in _daily) _dailyCard(t),
           ],
           if (_archive.isNotEmpty) ...[
-            _sectionHeader(context, '🏁 已完成', '来时的路'),
+            _sectionHeader(
+              context,
+              icon: Icons.emoji_events,
+              color: _kArchiveColor,
+              title: '已完成',
+              subtitle: '来时的路',
+              count: _archive.length,
+            ),
             for (final t in _archive) _archiveCard(t),
           ],
         ],
@@ -142,59 +187,80 @@ class _TasksPageState extends State<TasksPage> {
     );
   }
 
-  Widget _sectionHeader(BuildContext context, String title, String subtitle) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 12, bottom: 8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          Text(title,
-              style: Theme.of(context)
-                  .textTheme
-                  .titleMedium
-                  ?.copyWith(fontWeight: FontWeight.bold)),
-          const SizedBox(width: 8),
-          Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
-        ],
-      ),
+  Widget _sectionHeader(
+    BuildContext context, {
+    required IconData icon,
+    required Color color,
+    required String title,
+    required String subtitle,
+    required int count,
+  }) {
+    return SectionHeader(
+      icon: icon,
+      color: color,
+      title: title,
+      subtitle: subtitle,
+      trailing: TagPill(text: '$count', color: color),
     );
   }
 
   Widget _rewardChips(Task t, {bool showXp = true}) {
+    final scheme = Theme.of(context).colorScheme;
     final chips = <Widget>[
-      if (showXp && t.type == TaskType.mainline) _chip('经验 +$mainlineXp'),
-      if (showXp && t.type == TaskType.side) _chip('经验 +$sideQuestXp'),
-      if (t.rewardHealth > 0) _chip('健康 +${t.rewardHealth}'),
-      if (t.rewardDiscipline > 0) _chip('自律 +${t.rewardDiscipline}'),
-      if (t.rewardCharm > 0) _chip('魅力 +${t.rewardCharm}'),
+      if (showXp && t.type == TaskType.mainline)
+        TagPill(text: '经验 +$mainlineXp', color: _kMainColor, icon: Icons.bolt),
+      if (showXp && t.type == TaskType.side)
+        TagPill(text: '经验 +$sideQuestXp', color: _kSideColor, icon: Icons.bolt),
+      if (t.rewardHealth > 0)
+        TagPill(
+          text: '健康 +${t.rewardHealth}',
+          color: kHealthColor,
+          icon: Icons.favorite,
+        ),
+      if (t.rewardDiscipline > 0)
+        TagPill(
+          text: '自律 +${t.rewardDiscipline}',
+          color: _kDailyColor,
+          icon: Icons.bolt,
+        ),
+      if (t.rewardCharm > 0)
+        TagPill(
+          text: '魅力 +${t.rewardCharm}',
+          color: kCharmColor,
+          icon: Icons.auto_awesome,
+        ),
       if (t.type == TaskType.daily &&
           t.rewardHealth == 0 &&
           t.rewardDiscipline == 0 &&
           t.rewardCharm == 0)
-        _chip('无属性奖励'),
+        TagPill(text: '无属性奖励', color: scheme.onSurfaceVariant),
     ];
-    return Wrap(
-      spacing: 4,
-      runSpacing: 4,
-      children: chips,
-    );
+    return Wrap(spacing: 6, runSpacing: 6, children: chips);
   }
 
-  Widget _chip(String text) {
-    return Chip(
-      label: Text(text, style: const TextStyle(fontSize: 11)),
-      padding: EdgeInsets.zero,
-      visualDensity: VisualDensity.compact,
-      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-    );
-  }
-
-  Widget _cardShell(Widget child) {
+  Widget _cardShell(BuildContext context, Color accent, Widget child) {
     return Card(
-      margin: const EdgeInsets.only(bottom: 10),
+      margin: const EdgeInsets.only(bottom: 12),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
-        child: child,
+        padding: const EdgeInsets.fromLTRB(16, 14, 8, 14),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ClayAvatar(
+              icon: switch (accent) {
+                _kMainColor => Icons.flag,
+                _kSideColor => Icons.eco,
+                _kDailyColor => Icons.today,
+                _ => Icons.emoji_events,
+              },
+              color: accent,
+              size: 40,
+              iconSize: 20,
+            ),
+            const SizedBox(width: 12),
+            Expanded(child: child),
+          ],
+        ),
       ),
     );
   }
@@ -245,48 +311,57 @@ class _TasksPageState extends State<TasksPage> {
     final subtasks = _subtasksByTask[t.id] ?? const <Subtask>[];
     final undone = subtasks.where((s) => !s.isDone).length;
     return _cardShell(
+      context,
+      _kMainColor,
       Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(t.name,
-                        style: Theme.of(context)
-                            .textTheme
-                            .titleMedium
-                            ?.copyWith(fontWeight: FontWeight.w600)),
+                    Text(
+                      t.name,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
                     if (t.description.isNotEmpty)
-                      Text(t.description,
-                          style: Theme.of(context).textTheme.bodySmall),
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Text(
+                          t.description,
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ),
                   ],
                 ),
               ),
               _menuButton(t, subtasks: subtasks),
             ],
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 8),
           _rewardChips(t),
           if (subtasks.isNotEmpty) ...[
-            const SizedBox(height: 8),
+            const SizedBox(height: 10),
             for (final s in subtasks)
               Row(
                 children: [
                   Checkbox(
                     value: s.isDone,
-                    onChanged: s.isDone
-                        ? null
-                        : (_) => _completeSubtask(t, s),
+                    onChanged: s.isDone ? null : (_) => _completeSubtask(t, s),
                   ),
                   Expanded(
                     child: Text(
                       s.name,
                       style: TextStyle(
-                        decoration:
-                            s.isDone ? TextDecoration.lineThrough : null,
+                        fontSize: 14,
+                        decoration: s.isDone
+                            ? TextDecoration.lineThrough
+                            : null,
                         color: s.isDone ? Theme.of(context).hintColor : null,
                       ),
                     ),
@@ -294,11 +369,10 @@ class _TasksPageState extends State<TasksPage> {
                   IconButton(
                     visualDensity: VisualDensity.compact,
                     iconSize: 18,
+                    tooltip: '删除子项',
                     icon: const Icon(Icons.close),
                     onPressed: () async {
-                      await AppScope.of(context)
-                          .service
-                          .deleteSubtask(s.id);
+                      await AppScope.of(context).service.deleteSubtask(s.id);
                       await _load();
                     },
                   ),
@@ -308,9 +382,17 @@ class _TasksPageState extends State<TasksPage> {
           ],
           const SizedBox(height: 8),
           undone > 0
-              ? Text('完成剩余 $undone 个子项后自动完成',
-                  style: Theme.of(context).textTheme.bodySmall)
+              ? Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Text(
+                    '完成剩余 $undone 个子项后自动完成',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                )
               : FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size.fromHeight(44),
+                  ),
                   onPressed: () => _completeTask(t),
                   icon: const Icon(Icons.flag_outlined),
                   label: const Text('完成主线'),
@@ -321,73 +403,91 @@ class _TasksPageState extends State<TasksPage> {
   }
 
   Widget _addSubtaskRow(Task t) {
-    return TextButton.icon(
-      onPressed: () async {
-        final controller = TextEditingController();
-        final name = await showDialog<String>(
-          context: context,
-          builder: (dialogContext) => AlertDialog(
-            title: const Text('添加子项'),
-            content: TextField(
-              controller: controller,
-              autofocus: true,
-              maxLength: 30,
-              decoration: const InputDecoration(hintText: '子项名称'),
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: TextButton.icon(
+        onPressed: () async {
+          final controller = TextEditingController();
+          final name = await showDialog<String>(
+            context: context,
+            builder: (dialogContext) => AlertDialog(
+              title: const Text('添加子项'),
+              content: TextField(
+                controller: controller,
+                autofocus: true,
+                maxLength: 30,
+                decoration: const InputDecoration(hintText: '子项名称'),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: const Text('取消'),
+                ),
+                FilledButton(
+                  onPressed: () =>
+                      Navigator.of(dialogContext).pop(controller.text.trim()),
+                  child: const Text('添加'),
+                ),
+              ],
             ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(dialogContext).pop(),
-                child: const Text('取消'),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.of(dialogContext)
-                    .pop(controller.text.trim()),
-                child: const Text('添加'),
-              ),
-            ],
-          ),
-        );
-        // 注意：不在此处 dispose controller——对话框关闭动画未结束时
-        // TextField 仍引用它，提前 dispose 会触发框架断言崩溃。
-        if (name == null || name.isEmpty || !mounted) return;
-        await AppScope.of(context)
-            .service
-            .createSubtask(taskId: t.id, name: name);
-        await _load();
-      },
-      icon: const Icon(Icons.add, size: 18),
-      label: const Text('添加子项'),
+          );
+          // 注意：不在此处 dispose controller——对话框关闭动画未结束时
+          // TextField 仍引用它，提前 dispose 会触发框架断言崩溃。
+          if (name == null || name.isEmpty || !mounted) return;
+          await AppScope.of(
+            context,
+          ).service.createSubtask(taskId: t.id, name: name);
+          await _load();
+        },
+        icon: const Icon(Icons.add, size: 18),
+        label: const Text('添加子项'),
+      ),
     );
   }
 
   Widget _sideCard(Task t) {
     return _cardShell(
+      context,
+      _kSideColor,
       Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(t.name,
-                        style: Theme.of(context).textTheme.titleMedium),
+                    Text(
+                      t.name,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
                     if (t.description.isNotEmpty)
-                      Text(t.description,
-                          style: Theme.of(context).textTheme.bodySmall),
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Text(
+                          t.description,
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ),
                   ],
                 ),
               ),
               _menuButton(t),
             ],
           ),
-          const SizedBox(height: 6),
-          _rewardChips(t),
           const SizedBox(height: 8),
+          _rewardChips(t),
+          const SizedBox(height: 10),
           SizedBox(
             width: double.infinity,
             child: FilledButton.tonal(
+              style: FilledButton.styleFrom(
+                minimumSize: const Size.fromHeight(44),
+              ),
               onPressed: () => _completeTask(t),
               child: const Text('完成'),
             ),
@@ -406,50 +506,87 @@ class _TasksPageState extends State<TasksPage> {
       if (t.rewardCharm > 0) '魅力 -${t.rewardCharm}',
     ].join('、');
     return _cardShell(
+      context,
+      _kDailyColor,
       Opacity(
-        opacity: done ? 0.55 : 1,
+        opacity: done ? 0.8 : 1,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(t.name,
-                          style: Theme.of(context).textTheme.titleMedium),
+                      Text(
+                        t.name,
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.w800),
+                      ),
                       if (t.description.isNotEmpty)
-                        Text(t.description,
-                            style: Theme.of(context).textTheme.bodySmall),
+                        Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          child: Text(
+                            t.description,
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ),
                     ],
                   ),
                 ),
                 _menuButton(t),
               ],
             ),
-            const SizedBox(height: 6),
-            _rewardChips(t),
             const SizedBox(height: 8),
+            _rewardChips(t),
+            const SizedBox(height: 10),
             if (done)
-              const Center(
-                  child: Text('✓ 今日已完成，明天继续', textAlign: TextAlign.center))
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                decoration: BoxDecoration(
+                  color: kHealthColor.withValues(alpha: 0.13),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(
+                      Icons.check_circle,
+                      size: 20,
+                      color: kHealthColor,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      '今日已完成，明天继续',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: kHealthColor,
+                      ),
+                    ),
+                  ],
+                ),
+              )
             else ...[
               SizedBox(
                 width: double.infinity,
                 child: FilledButton(
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size.fromHeight(44),
+                  ),
                   onPressed: () => _completeTask(t),
                   child: const Text('完成'),
                 ),
               ),
               if (penaltyText.isNotEmpty)
                 Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Text('未完成将在 0 点扣除：$penaltyText',
-                      style: Theme.of(context)
-                          .textTheme
-                          .bodySmall
-                          ?.copyWith(color: Theme.of(context).hintColor)),
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Text(
+                    '未完成将在 0 点扣除：$penaltyText',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
                 ),
             ],
           ],
@@ -461,14 +598,21 @@ class _TasksPageState extends State<TasksPage> {
   Widget _archiveCard(Task t) {
     final when = t.completedAt;
     return _cardShell(
+      context,
+      _kArchiveColor,
       Row(
         children: [
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(t.name,
-                    style: Theme.of(context).textTheme.titleMedium),
+                Text(
+                  t.name,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 2),
                 Text(
                   '${t.type == TaskType.mainline ? '主线' : '支线'} · '
                   '${when != null ? '${when.year}/${when.month}/${when.day} 完成' : ''}',
@@ -485,28 +629,30 @@ class _TasksPageState extends State<TasksPage> {
 
   // ---- 创建 / 编辑对话框 ----
 
-  Future<void> _showTaskDialog(BuildContext context,
-      {Task? task, List<Subtask>? subtasks}) async {
+  Future<void> _showTaskDialog(
+    BuildContext context, {
+    Task? task,
+    List<Subtask>? subtasks,
+  }) async {
     final controller = AppScope.of(context);
     final nameController = TextEditingController(text: task?.name ?? '');
-    final descController =
-        TextEditingController(text: task?.description ?? '');
+    final descController = TextEditingController(text: task?.description ?? '');
     final healthController = TextEditingController(
-        text: task != null && task.rewardHealth > 0
-            ? '${task.rewardHealth}'
-            : '0');
+      text: task != null && task.rewardHealth > 0
+          ? '${task.rewardHealth}'
+          : '0',
+    );
     final disciplineController = TextEditingController(
-        text: task != null && task.rewardDiscipline > 0
-            ? '${task.rewardDiscipline}'
-            : (task == null ? '1' : '0'));
+      text: task != null && task.rewardDiscipline > 0
+          ? '${task.rewardDiscipline}'
+          : (task == null ? '1' : '0'),
+    );
     final charmController = TextEditingController(
-        text: task != null && task.rewardCharm > 0
-            ? '${task.rewardCharm}'
-            : '0');
+      text: task != null && task.rewardCharm > 0 ? '${task.rewardCharm}' : '0',
+    );
     final subtasksController = TextEditingController(
-        text: (subtasks ?? const <Subtask>[])
-            .map((s) => s.name)
-            .join('\n'));
+      text: (subtasks ?? const <Subtask>[]).map((s) => s.name).join('\n'),
+    );
 
     var type = task?.type ?? TaskType.mainline;
 
@@ -521,11 +667,9 @@ class _TasksPageState extends State<TasksPage> {
               children: [
                 SegmentedButton<TaskType>(
                   segments: const [
-                    ButtonSegment(
-                        value: TaskType.mainline, label: Text('主线')),
+                    ButtonSegment(value: TaskType.mainline, label: Text('主线')),
                     ButtonSegment(value: TaskType.side, label: Text('支线')),
-                    ButtonSegment(
-                        value: TaskType.daily, label: Text('每日任务')),
+                    ButtonSegment(value: TaskType.daily, label: Text('每日任务')),
                   ],
                   selected: {type},
                   onSelectionChanged: task == null
@@ -541,34 +685,25 @@ class _TasksPageState extends State<TasksPage> {
                 TextField(
                   controller: descController,
                   maxLength: 100,
-                  decoration:
-                      const InputDecoration(labelText: '描述（可选）'),
+                  decoration: const InputDecoration(labelText: '描述（可选）'),
                 ),
                 const SizedBox(height: 12),
                 Text('奖励（属性）', style: Theme.of(context).textTheme.titleSmall),
                 Row(
                   children: [
-                    Expanded(
-                        child: _rewardField('健康', healthController)),
+                    Expanded(child: _rewardField('健康', healthController)),
                     const SizedBox(width: 8),
-                    Expanded(
-                        child: _rewardField('自律', disciplineController)),
+                    Expanded(child: _rewardField('自律', disciplineController)),
                     const SizedBox(width: 8),
                     Expanded(child: _rewardField('魅力', charmController)),
                   ],
                 ),
                 const SizedBox(height: 4),
-                Text(
-                  switch (type) {
-                    TaskType.mainline => '固定经验 +50（最后一个子项完成时发放）',
-                    TaskType.side => '固定经验 +20',
-                    TaskType.daily => '0 点未完成会扣除上面的属性',
-                  },
-                  style: Theme.of(context)
-                      .textTheme
-                      .bodySmall
-                      ?.copyWith(color: Theme.of(context).hintColor),
-                ),
+                Text(switch (type) {
+                  TaskType.mainline => '固定经验 +50（最后一个子项完成时发放）',
+                  TaskType.side => '固定经验 +20',
+                  TaskType.daily => '0 点未完成会扣除上面的属性',
+                }, style: Theme.of(context).textTheme.bodySmall),
                 if (type == TaskType.mainline && task == null) ...[
                   const SizedBox(height: 12),
                   TextField(
@@ -604,8 +739,7 @@ class _TasksPageState extends State<TasksPage> {
     if (name.isEmpty) return;
     final reward = AttributeDelta(
       health: (int.tryParse(healthController.text) ?? 0).clamp(0, 100),
-      discipline:
-          (int.tryParse(disciplineController.text) ?? 0).clamp(0, 100),
+      discipline: (int.tryParse(disciplineController.text) ?? 0).clamp(0, 100),
       charm: (int.tryParse(charmController.text) ?? 0).clamp(0, 100),
     );
 
