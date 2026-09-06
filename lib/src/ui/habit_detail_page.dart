@@ -22,15 +22,25 @@ class _HabitDetailPageState extends State<HabitDetailPage> {
       DateTime.now().year, DateTime.now().month);
   HabitStatus? _status;
   Set<String> _dates = {};
+  GameService? _service;
+  bool _loadStarted = false;
 
   @override
-  void initState() {
-    super.initState();
-    _load();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // 注意：不能在 initState 中查找 AppScope（InheritedWidget），
+    // 框架会抛 "dependOnInheritedWidgetOfExactType was called before
+    // initState() completed" 异常导致白屏。
+    if (!_loadStarted) {
+      _loadStarted = true;
+      _service = AppScope.of(context).service;
+      _load();
+    }
   }
 
   Future<void> _load() async {
-    final service = AppScope.of(context).service;
+    final service = _service;
+    if (service == null) return;
     final status =
         await service.habitStatus(widget.habit.id, now: DateTime.now());
     if (mounted) {

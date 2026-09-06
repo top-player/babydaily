@@ -178,6 +178,7 @@ class _NotesPageState extends State<NotesPage> {
       floatingActionButton: _searching
           ? null
           : FloatingActionButton.extended(
+              heroTag: 'notes-fab',
               onPressed: () => _write(),
               icon: const Icon(Icons.edit),
               label: const Text('写笔记'),

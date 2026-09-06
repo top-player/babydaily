@@ -131,6 +131,7 @@ class _TasksPageState extends State<TasksPage> {
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
+        heroTag: 'tasks-fab',
         onPressed: () async {
           await _showTaskDialog(context);
           await _load();

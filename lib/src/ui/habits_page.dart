@@ -111,6 +111,7 @@ class _HabitsPageState extends State<HabitsPage> {
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
+        heroTag: 'habits-fab',
         onPressed: () async {
           await _showHabitDialog(context);
           await _load();
