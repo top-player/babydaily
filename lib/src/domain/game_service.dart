@@ -363,6 +363,52 @@ class GameService {
     return query.get();
   }
 
+  /// 某类型的任务（主线/支线按是否已完成过滤；每日任务用 dailyTasks）。
+  Future<List<Task>> tasksByType(TaskType type, {required bool completed}) async {
+    final query = db.select(db.tasks)
+      ..where((t) =>
+          t.type.equalsValue(type) & t.isCompleted.equals(completed))
+      ..orderBy([
+        (t) => OrderingTerm.asc(t.sortOrder),
+        (t) => OrderingTerm.asc(t.id),
+      ]);
+    return query.get();
+  }
+
+  /// 全部每日任务（按顺序）。
+  Future<List<Task>> dailyTasks() async {
+    final query = db.select(db.tasks)
+      ..where((t) => t.type.equalsValue(TaskType.daily))
+      ..orderBy([
+        (t) => OrderingTerm.asc(t.sortOrder),
+        (t) => OrderingTerm.asc(t.id),
+      ]);
+    return query.get();
+  }
+
+  /// 更新任务名称/描述/奖励（历史不受影响）。
+  Future<void> updateTask({
+    required int id,
+    required String name,
+    String description = '',
+    AttributeDelta reward = AttributeDelta.zero,
+  }) async {
+    await (db.update(db.tasks)..where((t) => t.id.equals(id))).write(
+      TasksCompanion(
+        name: Value(name),
+        description: Value(description),
+        rewardHealth: Value(reward.health),
+        rewardDiscipline: Value(reward.discipline),
+        rewardCharm: Value(reward.charm),
+      ),
+    );
+  }
+
+  /// 删除单个子项。
+  Future<void> deleteSubtask(int subtaskId) async {
+    await (db.delete(db.subtasks)..where((s) => s.id.equals(subtaskId))).go();
+  }
+
   /// 删除任务：子项级联删除；完成历史保留（快照名称）。
   Future<void> deleteTask(int taskId) async {
     await (db.delete(db.tasks)..where((t) => t.id.equals(taskId))).go();

@@ -67,6 +67,12 @@ class AppController extends ChangeNotifier {
   bool get onboardingDone =>
       _initialized && (character != null); // 主角存在即视为引导完成
 
+  /// 任意写操作后刷新主角快照并通知（属性/经验变化同步到主角页）。
+  Future<void> refresh() async {
+    character = await service.character();
+    notifyListeners();
+  }
+
   @override
   void dispose() {
     db.close();
