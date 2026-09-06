@@ -30,6 +30,20 @@ android {
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("debug")
+            // R8 压缩 + 资源裁剪，显著减小 APK（Dart 侧由 AOT + 树摇保证）。
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
+        }
+    }
+
+    // 原生库在 APK 内压缩（useLegacyPackaging），安装时解压，体积更小。
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
         }
     }
 }

@@ -21,5 +21,7 @@
 flutter pub get
 dart run build_runner build   # drift 代码生成
 flutter test                  # 全部测试
-flutter build apk             # 构建
+flutter build apk --release --split-per-abi --split-debug-info=build/symbols --obfuscate
+# 分 ABI 构建（8–9MB）：小米等 arm64 机型装 app-arm64-v8a-release.apk
+# 符号表在 build/symbols/，配合混淆可还原崩溃栈
 ```
