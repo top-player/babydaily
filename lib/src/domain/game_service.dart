@@ -9,6 +9,8 @@ import 'package:babydaily/src/data/database.dart';
 import 'package:babydaily/src/domain/attributes.dart';
 import 'package:babydaily/src/domain/enums.dart';
 import 'package:babydaily/src/domain/milestone.dart';
+import 'package:babydaily/src/domain/note_xp.dart';
+import 'package:babydaily/src/domain/settlement.dart';
 import 'package:babydaily/src/domain/streak.dart';
 import 'package:babydaily/src/domain/xp_economy.dart';
 
@@ -79,6 +81,31 @@ class CheckinOutcome extends GrowthOutcome {
   /// 打卡后的连续天数。
   final int streak;
   final List<MilestoneReached> milestones;
+}
+
+/// 一次每日结算的结果。
+class SettlementResult {
+  const SettlementResult({
+    required this.totalPenalty,
+    required this.penalizedTaskNames,
+  });
+
+  /// 实际扣除的属性（受下限 0 截断）。
+  final AttributeDelta totalPenalty;
+  final List<String> penalizedTaskNames;
+}
+
+/// 一次写笔记的结果。
+class NoteResult {
+  const NoteResult({
+    required this.noteId,
+    required this.xpGained,
+    required this.noteStreak,
+  });
+
+  final int noteId;
+  final int xpGained;
+  final int noteStreak;
 }
 
 class GameService {
@@ -422,6 +449,173 @@ class GameService {
     final parts = s.split('-');
     return DateTime(
         int.parse(parts[0]), int.parse(parts[1]), int.parse(parts[2]));
+  }
+
+  // ---- 每日结算 ----
+
+  /// 0 点结算（ADR-0004）：结算 [now] 的前一天。
+  ///
+  /// 前一天未完成的每日任务扣除其配置属性（下限 0、不扣经验）；
+  /// 全部每日任务重置为未完成。同一天重复调用返回 null（幂等）。
+  Future<SettlementResult?> settleDay({required DateTime now}) {
+    return db.transaction(() async {
+      final today = dateString(now);
+      final last = await (db.select(db.settings)
+            ..where((s) => s.key.equals('last_settled_on')))
+          .getSingleOrNull();
+      if (last?.value == today) return null;
+
+      final yesterday = dateString(now.subtract(const Duration(days: 1)));
+      final dailyTasks = await (db.select(db.tasks)
+            ..where((t) => t.type.equalsValue(TaskType.daily)))
+          .get();
+      final missed = [
+        for (final t in dailyTasks)
+          if (t.completedOn != yesterday) t,
+      ];
+
+      final row = await (db.select(db.characters)..where((c) => c.id.equals(1)))
+          .getSingle();
+      final current = Attributes(
+        health: row.health,
+        discipline: row.discipline,
+        charm: row.charm,
+      );
+      final outcome = settleDailyTasks(current: current, penalties: [
+        for (final t in missed)
+          AttributeDelta(
+            health: t.rewardHealth,
+            discipline: t.rewardDiscipline,
+            charm: t.rewardCharm,
+          ),
+      ]);
+
+      await (db.update(db.characters)..where((c) => c.id.equals(1))).write(
+        CharactersCompanion(
+          health: Value(outcome.after.health),
+          discipline: Value(outcome.after.discipline),
+          charm: Value(outcome.after.charm),
+          updatedAt: Value(now),
+        ),
+      );
+
+      // 全部每日任务重置为未完成
+      for (final t in dailyTasks) {
+        if (t.completedOn != null) {
+          await (db.update(db.tasks)..where((x) => x.id.equals(t.id))).write(
+            const TasksCompanion(completedOn: Value(null)),
+          );
+        }
+      }
+
+      await db.into(db.settings).insertOnConflictUpdate(
+          SettingsCompanion.insert(key: 'last_settled_on', value: today));
+
+      return SettlementResult(
+        totalPenalty: outcome.totalPenalty,
+        penalizedTaskNames: [for (final t in missed) t.name],
+      );
+    });
+  }
+
+  // ---- 笔记 ----
+
+  Future<NoteResult> addNote(String content, {required DateTime now}) async {
+    final id = await db.into(db.notes).insert(NotesCompanion.insert(
+          content: content,
+          createdAt: now,
+          updatedAt: now,
+        ));
+    return _grantNoteXpIfQualified(
+      qualifying: content.trim().length >= 20,
+      now: now,
+      noteId: id,
+      excludeNoteId: id,
+    );
+  }
+
+  Future<NoteResult> updateNote(int noteId, String content) async {
+    final note = await (db.select(db.notes)..where((n) => n.id.equals(noteId)))
+        .getSingleOrNull();
+    if (note == null) {
+      return NoteResult(noteId: noteId, xpGained: 0, noteStreak: 0);
+    }
+    final updatedAt = DateTime.now();
+    await (db.update(db.notes)..where((n) => n.id.equals(noteId))).write(
+      NotesCompanion(
+        content: Value(content),
+        updatedAt: Value(updatedAt),
+      ),
+    );
+    return _grantNoteXpIfQualified(
+      qualifying: content.trim().length >= 20,
+      // 经验归属笔记的创建日，而不是编辑日
+      now: note.createdAt,
+      noteId: noteId,
+      excludeNoteId: noteId,
+    );
+  }
+
+  /// 删除笔记：不回追已发放的经验（ADR-0003）。
+  Future<void> deleteNote(int noteId) async {
+    await (db.delete(db.notes)..where((n) => n.id.equals(noteId))).go();
+  }
+
+  /// 当天首篇合格（≥20 字）笔记发放经验：10 + min(连续天数-1, 5)。
+  Future<NoteResult> _grantNoteXpIfQualified({
+    required bool qualifying,
+    required DateTime now,
+    required int noteId,
+    required int? excludeNoteId,
+  }) async {
+    final char = await character();
+    if (!qualifying || char == null) {
+      return NoteResult(noteId: noteId, xpGained: 0, noteStreak: 0);
+    }
+
+    // 今天是否已存在其他合格笔记（决定今天是否已经发过）
+    final today = dateOnly(now);
+    final allNotes = await db.select(db.notes).get();
+    final hadQualifyingToday = allNotes.any((n) =>
+        n.id != excludeNoteId &&
+        dateOnly(n.createdAt) == today &&
+        n.content.trim().length >= 20);
+
+    final qualifyingDays = <DateTime>{
+      for (final n in allNotes)
+        if (n.content.trim().length >= 20) dateOnly(n.createdAt),
+    };
+    final streak = noteStreakDays(qualifyingDays, now);
+
+    if (hadQualifyingToday) {
+      return NoteResult(noteId: noteId, xpGained: 0, noteStreak: streak);
+    }
+
+    final growth = await _grant(xp: noteXpForStreak(streak), attrs: AttributeDelta.zero);
+    return NoteResult(
+      noteId: noteId,
+      xpGained: growth.xpGained,
+      noteStreak: streak,
+    );
+  }
+
+  /// 某天的全部笔记（按创建时间升序）。
+  Future<List<Note>> notesForDay(DateTime day) async {
+    final start = DateTime(day.year, day.month, day.day);
+    final end = start.add(const Duration(days: 1));
+    final query = db.select(db.notes)
+      ..where((n) => n.createdAt.isBiggerOrEqualValue(start) & n.createdAt.isSmallerThanValue(end))
+      ..orderBy([(n) => OrderingTerm.asc(n.createdAt)]);
+    return query.get();
+  }
+
+  /// 全文关键词搜索（LIKE 子串匹配，按日期倒序）。
+  Future<List<Note>> searchNotes(String keyword) async {
+    if (keyword.trim().isEmpty) return const [];
+    final query = db.select(db.notes)
+      ..where((n) => n.content.like('%$keyword%'))
+      ..orderBy([(n) => OrderingTerm.desc(n.createdAt)]);
+    return query.get();
   }
 
   // ---- 成长发放 ----

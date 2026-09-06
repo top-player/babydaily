@@ -329,4 +329,162 @@ void main() {
       expect(await service.checkInHabit(999, now: DateTime(2026, 6, 1, 22)), isNull);
     });
   });
+
+  group('每日结算', () {
+    test('0 点结算：未完成每日任务扣配置属性，完成的保留到重置', () async {
+      await service.createCharacter(name: '小明', age: 18, gender: Gender.male);
+      final done = await service.createTask(
+        name: '早起喝水',
+        type: TaskType.daily,
+        reward: const AttributeDelta(health: 0, discipline: 1, charm: 0),
+      );
+      final missed = await service.createTask(
+        name: '散步 10 分钟',
+        type: TaskType.daily,
+        reward: const AttributeDelta(health: 2, discipline: 0, charm: 0),
+      );
+      await service.completeTask(done, now: DateTime(2026, 6, 5, 9));
+
+      final outcome = await service.settleDay(now: DateTime(2026, 6, 6, 0, 5));
+      expect(outcome, isNotNull);
+      expect(outcome!.totalPenalty, const AttributeDelta(health: 2, discipline: 0, charm: 0));
+      final c = (await service.character())!;
+      expect(c.health, 48); // 50 - 2
+      expect(c.discipline, 51); // 完成的任务 +1，未被扣
+      expect(c.xp, 0); // 经验从不被扣
+
+      // 结算后每日任务可再次完成（新的一天）
+      expect(await service.completeTask(missed, now: DateTime(2026, 6, 6, 9)), isNotNull);
+    });
+
+    test('同一天重复结算只扣一次（幂等）', () async {
+      await service.createCharacter(name: '小明', age: 18, gender: Gender.male);
+      await service.createTask(
+        name: '散步 10 分钟',
+        type: TaskType.daily,
+        reward: const AttributeDelta(health: 2, discipline: 0, charm: 0),
+      );
+      final first = await service.settleDay(now: DateTime(2026, 6, 6, 0, 5));
+      final second = await service.settleDay(now: DateTime(2026, 6, 6, 1, 5));
+      expect(first, isNotNull);
+      expect(second, isNull);
+      expect((await service.character())!.health, 48);
+    });
+
+    test('属性已为 0 时结算停在下限，无负数债务', () async {
+      await service.createCharacter(name: '小明', age: 18, gender: Gender.male);
+      await (db.update(db.characters)..where((c) => c.id.equals(1))).write(
+        const CharactersCompanion(
+            health: Value(1), discipline: Value(0), charm: Value(0)),
+      );
+      await service.createTask(
+        name: '散步 10 分钟',
+        type: TaskType.daily,
+        reward: const AttributeDelta(health: 5, discipline: 0, charm: 0),
+      );
+      final outcome = await service.settleDay(now: DateTime(2026, 6, 6, 0, 5));
+      expect(outcome!.totalPenalty, const AttributeDelta(health: 1, discipline: 0, charm: 0));
+      expect((await service.character())!.health, 0);
+    });
+
+    test('没有未完成每日任务：不扣分', () async {
+      await service.createCharacter(name: '小明', age: 18, gender: Gender.male);
+      final done = await service.createTask(
+        name: '早起喝水',
+        type: TaskType.daily,
+        reward: const AttributeDelta(health: 0, discipline: 1, charm: 0),
+      );
+      await service.completeTask(done, now: DateTime(2026, 6, 5, 9));
+      final outcome = await service.settleDay(now: DateTime(2026, 6, 6, 0, 5));
+      expect(outcome!.totalPenalty, AttributeDelta.zero);
+      expect((await service.character())!.discipline, 51);
+    });
+  });
+
+  group('笔记与经验', () {
+    test('不足 20 字的笔记不给经验', () async {
+      await service.createCharacter(name: '小明', age: 18, gender: Gender.male);
+      final result = await service.addNote('今天不错', now: DateTime(2026, 6, 5, 20));
+      expect(result.xpGained, 0);
+      expect(result.noteStreak, 0);
+      expect((await service.character())!.xp, 0);
+    });
+
+    test('当天首篇 ≥20 字笔记 +10，且每天只发一次', () async {
+      await service.createCharacter(name: '小明', age: 18, gender: Gender.male);
+      final long = '今天读完了第一章，感觉很有收获，继续加油。'; // >20 字
+      final first = await service.addNote(long, now: DateTime(2026, 6, 5, 20));
+      expect(first.xpGained, noteBaseXp);
+      expect(first.noteStreak, 1);
+
+      final second = await service.addNote(long, now: DateTime(2026, 6, 5, 21));
+      expect(second.xpGained, 0);
+      expect((await service.character())!.xp, 10);
+    });
+
+    test('连续写笔记：第 N 天 +10+min(N-1,5)，断档回到 10', () async {
+      await service.createCharacter(name: '小明', age: 18, gender: Gender.male);
+      const long = '今天读完了第一章，感觉很有收获，继续加油。';
+      await service.addNote(long, now: DateTime(2026, 6, 1, 20)); // 10
+      await service.addNote(long, now: DateTime(2026, 6, 2, 20)); // 11
+      await service.addNote(long, now: DateTime(2026, 6, 3, 20)); // 12
+      expect((await service.character())!.xp, 33);
+
+      // 断档一天
+      await service.addNote(long, now: DateTime(2026, 6, 5, 20)); // 回 10
+      expect((await service.character())!.xp, 43);
+      final r6 = await service.addNote(long, now: DateTime(2026, 6, 6, 20));
+      expect(r6.noteStreak, 2);
+      expect(r6.xpGained, 11);
+    });
+
+    test('连续加成封顶 +5（每天最多 15）', () async {
+      await service.createCharacter(name: '小明', age: 18, gender: Gender.male);
+      const long = '今天读完了第一章，感觉很有收获，继续加油。';
+      for (var i = 0; i < 6; i++) {
+        await service.addNote(long, now: DateTime(2026, 6, 1 + i, 20));
+      }
+      // 10+11+12+13+14+15 = 75
+      expect((await service.character())!.xp, 75);
+      final r7 = await service.addNote(long, now: DateTime(2026, 6, 7, 20));
+      expect(r7.xpGained, 15);
+      expect(r7.noteStreak, 7);
+    });
+
+    test('删除笔记不回追经验；短笔记改成合格笔记当天可补发', () async {
+      await service.createCharacter(name: '小明', age: 18, gender: Gender.male);
+      const long = '今天读完了第一章，感觉很有收获，继续加油。';
+      final noteId = await service.addNote(long, now: DateTime(2026, 6, 5, 20)).then((r) => r.noteId!);
+      expect((await service.character())!.xp, 10);
+      await service.deleteNote(noteId);
+      expect((await service.character())!.xp, 10); // 不回追
+
+      // 新的一天：先写短笔记，再改长 → 当天补发
+      final shortId = await service.addNote('打卡', now: DateTime(2026, 6, 6, 9)).then((r) => r.noteId!);
+      expect((await service.character())!.xp, 10);
+      await service.updateNote(shortId, long);
+      expect((await service.character())!.xp, 20);
+    });
+  });
+
+  group('笔记检索', () {
+    test('按天浏览与关键词搜索（日期+内容）', () async {
+      await service.createCharacter(name: '小明', age: 18, gender: Gender.male);
+      await service.addNote('今天去公园散步，天气很好。', now: DateTime(2026, 6, 5, 20));
+      await service.addNote('晚上读完了第二章。', now: DateTime(2026, 6, 5, 21));
+      await service.addNote('公司项目上线，忙了一整天。', now: DateTime(2026, 6, 6, 22));
+
+      final day5 = await service.notesForDay(DateTime(2026, 6, 5));
+      expect(day5, hasLength(2));
+      final day6 = await service.notesForDay(DateTime(2026, 6, 6));
+      expect(day6, hasLength(1));
+
+      final hits = await service.searchNotes('散步');
+      expect(hits, hasLength(1));
+      expect(hits.single.content, '今天去公园散步，天气很好。');
+
+      final misses = await service.searchNotes('不存在的词');
+      expect(misses, isEmpty);
+    });
+  });
 }
