@@ -30,29 +30,39 @@ class _TasksPageState extends State<TasksPage> {
   List<Task> _daily = [];
   List<Task> _archive = [];
   Map<int, List<Subtask>> _subtasksByTask = {};
+  bool _loadStarted = false;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _load();
+    // 一次性加载：不用 AppScope.of（会注册重建依赖），
+    // 业务通知不再触发整树重建/重复查库。
+    if (!_loadStarted) {
+      _loadStarted = true;
+      _load();
+    }
   }
 
   Future<void> _load() async {
-    final service = AppScope.of(context).service;
-    final mainlines = await service.tasksByType(
+    final service = AppScope.read(context).service;
+    // 各路查询并行发起，减少串行等待。
+    final mainlinesF = service.tasksByType(TaskType.mainline, completed: false);
+    final sidesF = service.tasksByType(TaskType.side, completed: false);
+    final dailyF = service.dailyTasks();
+    final archiveMainF = service.tasksByType(
       TaskType.mainline,
-      completed: false,
+      completed: true,
     );
-    final sides = await service.tasksByType(TaskType.side, completed: false);
-    final daily = await service.dailyTasks();
-    final archive = [
-      ...await service.tasksByType(TaskType.mainline, completed: true),
-      ...await service.tasksByType(TaskType.side, completed: true),
-    ];
+    final archiveSideF = service.tasksByType(TaskType.side, completed: true);
+    final mainlines = await mainlinesF;
+    final sides = await sidesF;
+    final daily = await dailyF;
+    final archive = [...await archiveMainF, ...await archiveSideF];
     final subtasksByTask = <int, List<Subtask>>{};
-    for (final t in mainlines) {
-      subtasksByTask[t.id] = await service.subtasksOf(t.id);
-    }
+    await Future.wait([
+      for (final t in mainlines)
+        service.subtasksOf(t.id).then((s) => subtasksByTask[t.id] = s),
+    ]);
     if (mounted) {
       setState(() {
         _mainlines = mainlines;
@@ -65,7 +75,7 @@ class _TasksPageState extends State<TasksPage> {
   }
 
   Future<void> _afterMutation(GrowthOutcome? outcome) async {
-    final controller = AppScope.of(context);
+    final controller = AppScope.read(context);
     if (outcome != null && mounted) {
       showGrowthFeedback(context, outcome);
     }
@@ -74,7 +84,7 @@ class _TasksPageState extends State<TasksPage> {
   }
 
   Future<void> _completeTask(Task task) async {
-    final controller = AppScope.of(context);
+    final controller = AppScope.read(context);
     final outcome = await controller.service.completeTask(
       task.id,
       now: DateTime.now(),
@@ -93,7 +103,7 @@ class _TasksPageState extends State<TasksPage> {
   }
 
   Future<void> _completeSubtask(Task mainline, Subtask subtask) async {
-    final outcome = await AppScope.of(
+    final outcome = await AppScope.read(
       context,
     ).service.completeSubtask(subtask.id, now: DateTime.now());
     await _afterMutation(outcome);
@@ -274,7 +284,7 @@ class _TasksPageState extends State<TasksPage> {
         } else if (value == 'delete') {
           final confirmed = await _confirmDelete(context, t.name);
           if (confirmed && mounted) {
-            await AppScope.of(context).service.deleteTask(t.id);
+            await AppScope.read(context).service.deleteTask(t.id);
             await _load();
           }
         }
@@ -372,7 +382,7 @@ class _TasksPageState extends State<TasksPage> {
                     tooltip: '删除子项',
                     icon: const Icon(Icons.close),
                     onPressed: () async {
-                      await AppScope.of(context).service.deleteSubtask(s.id);
+                      await AppScope.read(context).service.deleteSubtask(s.id);
                       await _load();
                     },
                   ),
@@ -434,7 +444,7 @@ class _TasksPageState extends State<TasksPage> {
           // 注意：不在此处 dispose controller——对话框关闭动画未结束时
           // TextField 仍引用它，提前 dispose 会触发框架断言崩溃。
           if (name == null || name.isEmpty || !mounted) return;
-          await AppScope.of(
+          await AppScope.read(
             context,
           ).service.createSubtask(taskId: t.id, name: name);
           await _load();
@@ -634,7 +644,7 @@ class _TasksPageState extends State<TasksPage> {
     Task? task,
     List<Subtask>? subtasks,
   }) async {
-    final controller = AppScope.of(context);
+    final controller = AppScope.read(context);
     final nameController = TextEditingController(text: task?.name ?? '');
     final descController = TextEditingController(text: task?.description ?? '');
     final healthController = TextEditingController(

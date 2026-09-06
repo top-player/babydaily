@@ -38,7 +38,7 @@ class _HabitDetailPageState extends State<HabitDetailPage> {
     // initState() completed" 异常导致白屏。
     if (!_loadStarted) {
       _loadStarted = true;
-      _service = AppScope.of(context).service;
+      _service = AppScope.read(context).service;
       _load();
     }
   }
@@ -59,7 +59,7 @@ class _HabitDetailPageState extends State<HabitDetailPage> {
   }
 
   Future<void> _checkIn() async {
-    final controller = AppScope.of(context);
+    final controller = AppScope.read(context);
     final outcome = await controller.service.checkInHabit(
       widget.habit.id,
       now: DateTime.now(),

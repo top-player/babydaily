@@ -79,7 +79,7 @@ class SettingsPage extends StatelessWidget {
   }
 
   Future<void> _export(BuildContext context) async {
-    final controller = AppScope.of(context);
+    final controller = AppScope.read(context);
     try {
       final json = await controller.service.exportJson();
       final dir = await _documentsDir();
@@ -125,7 +125,7 @@ class SettingsPage extends StatelessWidget {
   }
 
   Future<void> _import(BuildContext context) async {
-    final controller = AppScope.of(context);
+    final controller = AppScope.read(context);
     final dir = await _documentsDir();
     final file = File(p.join(dir, 'babydaily_restore.json'));
     if (!await file.exists()) {

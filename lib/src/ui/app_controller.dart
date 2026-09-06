@@ -83,6 +83,12 @@ class AppController extends ChangeNotifier {
 class AppScope extends InheritedNotifier<AppController> {
   const AppScope({super.key, required super.notifier, required super.child});
 
+  /// 建立依赖的读取：controller 变化时当前组件重建（仅用于真正需要实时响应的 build）。
   static AppController of(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<AppScope>()!.notifier!;
+
+  /// 无依赖的读取：只在事件回调里取用，不注册重建依赖。
+  /// 用它可避免一次业务通知把所有页面整树重建（性能）。
+  static AppController read(BuildContext context) =>
+      context.getInheritedWidgetOfExactType<AppScope>()!.notifier!;
 }

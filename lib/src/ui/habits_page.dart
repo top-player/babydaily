@@ -27,20 +27,28 @@ class _HabitsPageState extends State<HabitsPage> {
   List<Habit> _habits = [];
   List<Habit> _archived = [];
   Map<int, HabitStatus> _statusByHabit = {};
+  bool _loadStarted = false;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _load();
+    // 一次性加载：避免业务通知触发的重复查库与整树重建。
+    if (!_loadStarted) {
+      _loadStarted = true;
+      _load();
+    }
   }
 
   Future<void> _load() async {
-    final service = AppScope.of(context).service;
+    final service = AppScope.read(context).service;
     final all = await service.habits(includeArchived: true);
-    final statuses = <int, HabitStatus>{};
-    for (final h in all) {
-      statuses[h.id] = await service.habitStatus(h.id, now: DateTime.now());
-    }
+    // 各习惯状态并行查询（原为串行 N+1）。
+    final statusList = await Future.wait([
+      for (final h in all) service.habitStatus(h.id, now: DateTime.now()),
+    ]);
+    final statuses = <int, HabitStatus>{
+      for (var i = 0; i < all.length; i++) all[i].id: statusList[i],
+    };
     if (mounted) {
       setState(() {
         _habits = all.where((h) => !h.isArchived).toList();
@@ -51,7 +59,7 @@ class _HabitsPageState extends State<HabitsPage> {
   }
 
   Future<void> _checkIn(Habit habit) async {
-    final controller = AppScope.of(context);
+    final controller = AppScope.read(context);
     final outcome = await controller.service.checkInHabit(
       habit.id,
       now: DateTime.now(),
@@ -328,7 +336,7 @@ class _HabitsPageState extends State<HabitsPage> {
   Widget _habitMenu(Habit h) {
     return PopupMenuButton<String>(
       onSelected: (value) async {
-        final service = AppScope.of(context).service;
+        final service = AppScope.read(context).service;
         if (value == 'edit') {
           await _showHabitDialog(context, habit: h);
           await _load();
@@ -371,7 +379,7 @@ class _HabitsPageState extends State<HabitsPage> {
   }
 
   Future<void> _showHabitDialog(BuildContext context, {Habit? habit}) async {
-    final controller = AppScope.of(context);
+    final controller = AppScope.read(context);
     final nameController = TextEditingController(text: habit?.name ?? '');
     final descController = TextEditingController(
       text: habit?.description ?? '',

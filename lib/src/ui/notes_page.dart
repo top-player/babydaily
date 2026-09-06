@@ -21,15 +21,20 @@ class _NotesPageState extends State<NotesPage> {
   bool _searching = false;
   String _query = '';
   List<Note> _results = [];
+  bool _loadStarted = false;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _load();
+    // 一次性加载：业务通知不触发重复查库。
+    if (!_loadStarted) {
+      _loadStarted = true;
+      _load();
+    }
   }
 
   Future<void> _load() async {
-    final service = AppScope.of(context).service;
+    final service = AppScope.read(context).service;
     final notes = await service.notesForDay(_day);
     if (mounted) {
       setState(() => _notes = notes);
@@ -37,7 +42,7 @@ class _NotesPageState extends State<NotesPage> {
   }
 
   Future<void> _search() async {
-    final service = AppScope.of(context).service;
+    final service = AppScope.read(context).service;
     final results = await service.searchNotes(_query);
     if (mounted) setState(() => _results = results);
   }
@@ -86,7 +91,7 @@ class _NotesPageState extends State<NotesPage> {
     final content = controller.text;
     if (content.trim().isEmpty || !mounted) return;
 
-    final service = AppScope.of(context).service;
+    final service = AppScope.read(context).service;
     NoteResult result;
     if (existing == null) {
       result = await service.addNote(content, now: DateTime.now());
@@ -97,7 +102,7 @@ class _NotesPageState extends State<NotesPage> {
     if (result.xpGained > 0) {
       showCelebration(context, '记录 +${result.xpGained} 经验 ✍️');
     }
-    await AppScope.of(context).refresh();
+    await AppScope.read(context).refresh();
     await _load();
   }
 
@@ -120,7 +125,7 @@ class _NotesPageState extends State<NotesPage> {
       ),
     );
     if (confirmed == true && mounted) {
-      await AppScope.of(context).service.deleteNote(note.id);
+      await AppScope.read(context).service.deleteNote(note.id);
       await _load();
     }
   }

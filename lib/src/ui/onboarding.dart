@@ -47,7 +47,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
   int _parseInt(String s, int fallback) => int.tryParse(s.trim()) ?? fallback;
 
   Future<void> _createCharacter({String? name}) async {
-    final controller = AppScope.of(context);
+    final controller = AppScope.read(context);
     await controller.createCharacter(
       name:
           name ??
@@ -74,7 +74,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
   }
 
   Future<void> _finishStep2() async {
-    final controller = AppScope.of(context);
+    final controller = AppScope.read(context);
     final name = _mainlineController.text.trim();
     if (name.isNotEmpty) {
       final discipline = _parseInt(
@@ -98,7 +98,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
   }
 
   Future<void> _finishStep3() async {
-    final controller = AppScope.of(context);
+    final controller = AppScope.read(context);
     final name = _dailyController.text.trim();
     if (name.isNotEmpty) {
       final discipline = _parseInt(
@@ -115,7 +115,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
   }
 
   Future<void> _finishStep4() async {
-    final controller = AppScope.of(context);
+    final controller = AppScope.read(context);
     final name = _habitController.text.trim();
     if (name.isNotEmpty) {
       await controller.service.createHabit(
