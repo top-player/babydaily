@@ -12,7 +12,13 @@ import 'package:babydaily/src/ui/home_shell.dart';
 Future<AppDatabase> _openDatabase() async {
   final dir = await getApplicationDocumentsDirectory();
   final file = File(p.join(dir.path, 'babydaily.sqlite'));
-  return AppDatabase(NativeDatabase.createInBackground(file));
+  return AppDatabase(
+    NativeDatabase.createInBackground(
+      file,
+      // 启动结算与系统重启/更新可能短暂竞态；等锁而不是直接失败。
+      setup: (db) => db.execute('PRAGMA busy_timeout = 5000;'),
+    ),
+  );
 }
 
 Future<void> main() async {

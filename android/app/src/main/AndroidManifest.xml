@@ -1,4 +1,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Android 9 及以下写公共下载目录需要此权限；Android 10+ 走 MediaStore 无需权限 -->
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
     <application
         android:label="宝宝日常"
         android:name="${applicationName}"
