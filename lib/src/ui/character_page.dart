@@ -43,72 +43,76 @@ class CharacterPage extends StatelessWidget {
     final atmosphere = atmosphereOf(controller.scene);
     final scheme = Theme.of(context).colorScheme;
 
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        // 问候英雄卡
-        HeroCard(
-          colors: [scheme.primaryContainer, scheme.secondaryContainer],
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 18, 12, 18),
-            child: Row(
-              children: [
-                Container(
-                  width: 44,
-                  height: 44,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: scheme.surface.withValues(alpha: 0.55),
-                  ),
-                  child: Text(
-                    atmosphere.emoji,
-                    style: const TextStyle(fontSize: 24),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        atmosphere.greeting,
-                        style: Theme.of(context).textTheme.titleMedium
-                            ?.copyWith(
-                              fontWeight: FontWeight.w800,
-                              color: scheme.onPrimaryContainer,
-                            ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        atmosphere.tip,
-                        style: TextStyle(
-                          color: scheme.onPrimaryContainer.withValues(
-                            alpha: 0.8,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                IconButton(
-                  tooltip: '设置',
-                  onPressed: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => const SettingsPage(),
+    // 主角页是唯一没有 AppBar 的标签页，必须自己避开状态栏与前置摄像头挖孔
+    // （MediaQuery.padding 已合并 DisplayCutout 安全区），否则顶部问候卡被遮挡。
+    return SafeArea(
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          // 问候英雄卡
+          HeroCard(
+            colors: [scheme.primaryContainer, scheme.secondaryContainer],
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 18, 12, 18),
+              child: Row(
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: scheme.surface.withValues(alpha: 0.55),
+                    ),
+                    child: Text(
+                      atmosphere.emoji,
+                      style: const TextStyle(fontSize: 24),
                     ),
                   ),
-                  icon: const Icon(Icons.settings_outlined),
-                ),
-              ],
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          atmosphere.greeting,
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(
+                                fontWeight: FontWeight.w800,
+                                color: scheme.onPrimaryContainer,
+                              ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          atmosphere.tip,
+                          style: TextStyle(
+                            color: scheme.onPrimaryContainer.withValues(
+                              alpha: 0.8,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: '设置',
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const SettingsPage(),
+                      ),
+                    ),
+                    icon: const Icon(Icons.settings_outlined),
+                  ),
+                ],
+              ),
             ),
           ),
-        ),
-        const SizedBox(height: 14),
-        if (c != null) _profileCard(context, controller, c),
-        const SizedBox(height: 14),
-        _sceneCard(context, controller),
-      ],
+          const SizedBox(height: 14),
+          if (c != null) _profileCard(context, controller, c),
+          const SizedBox(height: 14),
+          _sceneCard(context, controller),
+        ],
+      ),
     );
   }
 
