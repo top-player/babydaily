@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 8.0+ 自适应图标：前景为 icon1.png 的主体（缩放至 72/108 dp，居中，
+     正好铺满系统遮罩视口，illustration 落在 66 dp 安全圆内）。 -->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@drawable/ic_launcher_background" />
+    <foreground android:drawable="@mipmap/ic_launcher_foreground" />
+</adaptive-icon>

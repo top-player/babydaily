@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 自适应图标底色：取自 icon1.png 的绿色渐变（左上亮 → 右下暗）。
+     前景 ic_launcher_foreground 已按 72/108 dp 铺满遮罩视口，此层通常不可见，
+     仅在前景边缘被裁切时兜底，避免露出白色/黑色缝隙。 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <gradient
+        android:angle="315"
+        android:startColor="#CFF9D6"
+        android:centerColor="#B4EBC1"
+        android:endColor="#9DDDAB"
+        android:type="linear" />
+</shape>
