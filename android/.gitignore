@@ -7,6 +7,12 @@ gradle-wrapper.jar
 GeneratedPluginRegistrant.java
 .cxx/
 
+# Gradle 模块构建目录（根 .gitignore 的 /build/ 只锚定项目根目录，覆盖不到这里）
+/build/
+/app/build/
+# Kotlin 2.x 增量编译缓存（android/.kotlin/sessions）
+.kotlin/
+
 # Remember to never publicly share your keystore.
 # See https://flutter.dev/to/reference-keystore
 key.properties
