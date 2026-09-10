@@ -15,6 +15,7 @@
 - 领域规则（经验经济、等级曲线、连续计算、每日结算、笔记经验）以单元测试锁定，见 `test/domain/`。
 - 工程规范（改完必须提交、分 ABI 构建 release 并 adb 装机）：`AGENTS.md`。
 - 设计上下文：`CONTEXT.md`（术语表）；关键决策：`docs/adr/`（本地 SQLite+JSON 备份 / 习惯与任务分离 / 经验经济 / 每日结算惩罚）。
+- 对话记录导出：`node tools/export_sessions.mjs` —— 把本项目在 DSH 里的全部会话（`~/.dsh/sessions/` 下的 zstd JSONL 日志）导出成 `exports/conversations/`：`index.html` 总览 + 每会话一份 HTML（气泡视图、工具调用可折叠、支持搜索过滤）+ 同名 Markdown + `sessions.json` 结构化数据。该目录不入库。
 
 ## 开发
 
