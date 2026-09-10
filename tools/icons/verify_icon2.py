@@ -5,6 +5,8 @@ from PIL import Image, ImageDraw
 
 ROOT = Path(__file__).resolve().parents[2]
 RES = ROOT / "android" / "app" / "src" / "main" / "res"
+OUT = ROOT / "build" / "icons"  # 预览产物落在 build/（已被 .gitignore 忽略）
+OUT.mkdir(parents=True, exist_ok=True)
 BG = (252, 240, 223, 255)  # #FCF0DF, must equal ic_launcher_background.xml
 
 fg = Image.open(RES / "mipmap-xxxhdpi" / "ic_launcher_foreground.png").convert("RGBA")
@@ -33,7 +35,7 @@ for i, shape in enumerate(("circle", "squircle", "square")):
         cell.paste(canvas, (0, 0), mask(shape, fg.size))
     cell = cell.resize((CELL - 20, CELL - 20), Image.LANCZOS)
     sheet.paste(cell, (i * CELL + 10, 10), cell)
-sheet.convert("RGB").save(ROOT / "build" / "icons" / "adaptive_check1.png")
+sheet.convert("RGB").save(OUT / "adaptive_check1.png")
 
 # legacy row
 row = Image.new("RGB", (CELL * 3, 240), (240, 240, 240))
@@ -44,7 +46,7 @@ for d in ("xxxhdpi", "xxhdpi", "xhdpi", "hdpi", "mdpi"):
     if x + im.width < CELL * 3:
         row.paste(im.convert("RGB"), (x, 240 - im.height - 10), im)
         x += im.width + 12
-row.save(ROOT / "build" / "icons" / "legacy_check1.png")
+row.save(OUT / "legacy_check1.png")
 
 # seam check: composite must have no visible step at the foreground edge
 px = canvas.load()

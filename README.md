@@ -33,8 +33,8 @@ flutter build apk --release --split-per-abi --split-debug-info=build/symbols --o
 源图 `icon2.png`（圆角方块插画：小人爬楼梯奔向星星，奶油底 `#FCF0DF`）。资源由脚本生成，不要手改 `mipmap-*` 下的 PNG：
 
 ```sh
-python build/icons/gen_icons.py      # 五档传统图标 48–192px + 五档自适应前景（108/108 dp 满铺）
-python build/icons/verify_icon2.py   # 合成遮罩预览，核对底色与前景无接缝
+python tools/icons/gen_icons.py      # 五档传统图标 48–192px + 五档自适应前景（108/108 dp 满铺）
+python tools/icons/verify_icon2.py   # 合成圆形/圆角方形/方形遮罩预览，核对底色与前景无接缝
 ```
 
 - API < 26 用 `ic_launcher.png`（原图圆角方块直接缩放）。

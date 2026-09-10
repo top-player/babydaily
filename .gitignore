@@ -12,7 +12,8 @@
 .swiftpm/
 migrate_working_dir/
 
-# 本地技能/agent 目录（harness 安装的检索内容，不入库）
+# 本地技能/agent 目录（harness 安装的第三方技能内容，由 skills-lock.json 记录来源，
+# 需要时用 harness 重新安装；不随仓库分发。注入路径 .claude/skills 为指向 .agents/skills 的联接）
 .agents/
 .claude/
 
@@ -39,6 +40,13 @@ migrate_working_dir/
 .pub/
 /build/
 /coverage/
+
+# 发布产物与签名材料：绝不入库
+*.apk
+*.aab
+*.jks
+*.keystore
+key.properties
 
 # Symbolication related
 app.*.symbols
