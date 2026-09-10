@@ -1,8 +1,13 @@
-gradle-wrapper.jar
+# Gradle wrapper 必须入库：clone 后本机没有 gradle-wrapper.jar，Flutter 也不会自动补，
+# 缺了它 ./gradlew 与 flutter build 都会失败。wrapper 是固定版本的官方脚本，不含机器相关信息。
+# 注意：这三条曾被忽略（init 起就未入库），要先把文件加进索引，忽略规则的删除才会随提交生效。
+!/gradlew
+!/gradlew.bat
+!/gradle/wrapper/gradle-wrapper.properties
+!/gradle/wrapper/gradle-wrapper.jar
+
 /.gradle
 /captures/
-/gradlew
-/gradlew.bat
 /local.properties
 GeneratedPluginRegistrant.java
 .cxx/
