@@ -4,7 +4,7 @@
 
 ## 1. 改完代码必须提交到 git
 
-- 任何代码、资源或配置改动完成后，**立即提交到 git**，不要留下未提交的改动。
+- 任何代码、资源或配置改动完成后，**任务结束前必须提交到 git**，不要留下未提交的改动。
 - 提交信息沿用仓库风格：`type(scope): 摘要——细节；细节`（如 `fix(ui): ...`、`build: ...`）。
 - 一次改动拆成若干语义清晰的提交；提交前跑通 `flutter analyze` 与 `flutter test`。
 
@@ -22,7 +22,7 @@ flutter build apk --release --split-per-abi --split-debug-info=build/symbols --o
 adb install -r build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
 ```
 
-- ABI 选择：小米等 arm64 机型装 `app-arm64-v8a-release.apk`，老 32 位机装 `app-armeabi-v7a-release.apk`，模拟器装 `app-x86_64-release.apk`。
+- ABI 选择：小米等 arm64 机型装 `app-arm64-v8a-release.apk`。
 - 发布前递增 `pubspec.yaml` 的 `version: x.y.z+N`（build 号 +1，保证覆盖安装升级）。
 - 安装后用 `adb shell dumpsys package com.yjym.baby.babydaily | grep version` 核对设备上的 versionName / versionCode。
 - 混淆符号表在 `build/symbols/`，用于还原崩溃栈。
