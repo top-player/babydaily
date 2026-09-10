@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Android 8.0+ 自适应图标：前景为 icon1.png 的主体（缩放至 72/108 dp，居中，
-     正好铺满系统遮罩视口，illustration 落在 66 dp 安全圆内）。 -->
+<!-- Android 8.0+ 自适应图标：前景取 icon2.png 的主体，按 108/108 dp 满铺遮罩视口
+     （底色层不外露、无接缝）；底色层为同一奶油色 #FCF0DF，与前景圆角方块填色一致。 -->
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
     <background android:drawable="@drawable/ic_launcher_background" />
     <foreground android:drawable="@mipmap/ic_launcher_foreground" />

@@ -26,3 +26,15 @@ flutter build apk --release --split-per-abi --split-debug-info=build/symbols --o
 # 分 ABI 构建（8–9MB）：小米等 arm64 机型装 app-arm64-v8a-release.apk
 # 符号表在 build/symbols/，配合混淆可还原崩溃栈
 ```
+
+### 应用图标
+
+源图 `icon2.png`（圆角方块插画：小人爬楼梯奔向星星，奶油底 `#FCF0DF`）。资源由脚本生成，不要手改 `mipmap-*` 下的 PNG：
+
+```sh
+python build/icons/gen_icons.py      # 五档传统图标 48–192px + 五档自适应前景（108/108 dp 满铺）
+python build/icons/verify_icon2.py   # 合成遮罩预览，核对底色与前景无接缝
+```
+
+- API < 26 用 `ic_launcher.png`（原图圆角方块直接缩放）。
+- API ≥ 26 用自适应图标：前景按 108/108 dp 满铺遮罩视口，底色层 `#FCF0DF` 与前景方块填色通道差 ≤1，任何遮罩形状下都不会露出色环或接缝。

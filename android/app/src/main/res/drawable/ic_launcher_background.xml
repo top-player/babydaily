@@ -1,13 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 自适应图标底色：取自 icon1.png 的绿色渐变（左上亮 → 右下暗）。
-     前景 ic_launcher_foreground 已按 72/108 dp 铺满遮罩视口，此层通常不可见，
-     仅在前景边缘被裁切时兜底，避免露出白色/黑色缝隙。 -->
+<!-- 自适应图标底色：与 icon2.png 圆角方块的奶油底色完全一致（实测填充中位数与四角
+     入色均值均为 rgb(252,240,223)）。
+     前景 ic_launcher_foreground 已按 108/108 dp 满铺，此层正常不可见；
+     因两色相同（通道差 ≤1），即使某些启动器遮罩略大于前景，也只会看到同一片奶油色，
+     不会出现色环或接缝（旧的绿色渐变层与本图奶油底对比达 72/255，已废弃）。 -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
-    <gradient
-        android:angle="315"
-        android:startColor="#CFF9D6"
-        android:centerColor="#B4EBC1"
-        android:endColor="#9DDDAB"
-        android:type="linear" />
+    <solid android:color="#FCF0DF" />
 </shape>
