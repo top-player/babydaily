@@ -1,15 +1,18 @@
-/// 设置页：JSON 备份导出/导入（ADR-0005：公共下载目录）、关于。
+/// 设置页：JSON 备份导出/导入（ADR-0005 / ADR-0008）、关于。
 ///
-/// 备份位置：Android 10+ 通过 MediaStore 写入公共「下载/BabyDaily」，
+/// 导出：Android 10+ 通过 MediaStore 写入公共「下载/BabyDaily」，
 /// 小米/新安卓的文件管理器可见；旧系统或通道不可用时回退应用文档目录。
+/// 导入：调用系统文件选择器（ACTION_OPEN_DOCUMENT）选任意位置的备份 json。
 library;
 
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+import 'package:babydaily/src/domain/xp_economy.dart';
 import 'package:babydaily/src/ui/app_controller.dart';
 import 'package:babydaily/src/ui/clay.dart';
 import 'package:babydaily/src/ui/feedback.dart';
@@ -21,7 +24,9 @@ const MethodChannel _storageChannel = MethodChannel(
 );
 
 const String _backupFolder = '下载/BabyDaily';
-const String _legacyPickValue = '__legacy__';
+
+/// 当前版本（与 pubspec.yaml 的 version 保持一致）。
+const String _appVersion = '1.0.2';
 
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key});
@@ -73,24 +78,26 @@ class SettingsPage extends StatelessWidget {
                     iconSize: 20,
                   ),
                   title: const Text('导入备份'),
-                  subtitle: const Text('从「下载/BabyDaily」里选择备份文件恢复'),
+                  subtitle: const Text('用系统文件选择器挑一份备份 json 恢复（覆盖当前数据）'),
                   onTap: () => _import(context),
                 ),
               ],
             ),
           ),
           const SizedBox(height: 14),
-          const Card(
+          Card(
             margin: EdgeInsets.zero,
             child: ListTile(
-              leading: ClayAvatar(
+              leading: const ClayAvatar(
                 icon: Icons.info_outline,
                 color: kCharmColor,
                 size: 40,
                 iconSize: 20,
               ),
-              title: Text('宝宝日常 v1.0.0'),
-              subtitle: Text('轻松治愈的个人成长 RPG\n主角 · 任务 · 习惯 · 笔记 · 场景'),
+              title: Text('宝宝日常 v$_appVersion'),
+              subtitle: const Text(
+                '轻松治愈的个人成长 RPG\n主角 · 任务 · 习惯 · 笔记 · 场景',
+              ),
               isThreeLine: true,
             ),
           ),
@@ -165,6 +172,8 @@ class SettingsPage extends StatelessWidget {
   }
 
   Future<void> _showBackupSuccess(BuildContext context, String path) async {
+    // 原生返回的是 Download/... 形式，界面上用中文目录更直观
+    final display = path.replaceFirst('Download/', '下载/');
     await showDialog<void>(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -176,7 +185,7 @@ class SettingsPage extends StatelessWidget {
             const Text('备份文件已保存到：'),
             const SizedBox(height: 8),
             SelectableText(
-              path,
+              display,
               style: TextStyle(
                 fontWeight: FontWeight.w700,
                 color: Theme.of(dialogContext).colorScheme.primary,
@@ -202,56 +211,55 @@ class SettingsPage extends StatelessWidget {
 
   // ---- 导入 ----
 
+  /// 用系统文件选择器挑一份备份，确认后覆盖当前数据。
   Future<void> _import(BuildContext context) async {
-    final controller = AppScope.read(context);
-
-    Iterable<Map<dynamic, dynamic>> files = const [];
-    var channelOk = true;
+    Map<Object?, Object?>? picked;
     try {
-      final list =
-          await _storageChannel.invokeListMethod<dynamic>('listBackups') ??
-          const [];
-      files = list.cast<Map<dynamic, dynamic>>();
-    } catch (_) {
-      channelOk = false;
-    }
-    final legacyPath = await _legacyRestoreJson();
-    if (!context.mounted) return;
-    if (!files.any((m) => (m['readable'] ?? false) == true) &&
-        legacyPath == null) {
-      await _showImportGuide(context, channelOk);
+      picked = await _storageChannel
+          .invokeMethod<Map<Object?, Object?>>('pickBackup');
+    } on MissingPluginException {
+      if (!context.mounted) return;
+      await _importLegacyFile(context); // 通道不可用（测试/极旧系统）→ 内部目录兜底
       return;
-    }
-
-    final picked = await _showPickDialog(context, files, legacyPath);
-    if (picked == null || !context.mounted) return;
-
-    String json;
-    String label;
-    if (picked == _legacyPickValue && legacyPath != null) {
-      json = await File(legacyPath).readAsString();
-      label = 'babydaily_restore.json';
-    } else {
-      try {
-        json =
-            await _storageChannel.invokeMethod<String>('readBackup', {
-              'name': picked,
-            }) ??
-            '';
-        label = picked;
-      } on PlatformException catch (e) {
-        if (context.mounted) {
-          showCelebration(context, '读取失败：${e.message ?? '无法读取该文件'}');
-        }
-        return;
+    } on PlatformException catch (e) {
+      if (!context.mounted) return;
+      if (e.code == 'NO_PICKER') {
+        await _importLegacyFile(context);
+      } else {
+        showCelebration(context, '读取失败：${e.message ?? '无法读取该文件'}');
       }
-    }
-    if (json.isEmpty || !context.mounted) {
-      if (context.mounted) showCelebration(context, '读取备份失败，文件可能为空');
+      return;
+    } catch (e) {
+      if (!context.mounted) return;
+      showCelebration(context, '导入失败：$e');
       return;
     }
+    if (picked == null || !context.mounted) return; // 用户取消
 
-    final confirmed = await _confirmOverwrite(context, label);
+    final name = picked['name'] as String? ?? '备份文件';
+    final json = picked['json'] as String? ?? '';
+    await _restoreFromJson(context, json, name);
+  }
+
+  /// 校验备份内容 → 展示摘要并二次确认 → 覆盖导入。
+  Future<void> _restoreFromJson(
+    BuildContext context,
+    String json,
+    String fileName,
+  ) async {
+    final controller = AppScope.read(context);
+    Map<String, dynamic> data;
+    try {
+      data = _parseBackup(json);
+    } on FormatException catch (e) {
+      if (context.mounted) {
+        showCelebration(context, '无法导入：${e.message}');
+      }
+      return;
+    }
+    if (!context.mounted) return;
+
+    final confirmed = await _confirmOverwrite(context, fileName, data);
     if (confirmed != true || !context.mounted) return;
     try {
       await controller.service.importJson(json, now: DateTime.now());
@@ -266,132 +274,93 @@ class SettingsPage extends StatelessWidget {
     }
   }
 
-  /// 应用文档目录里的旧式恢复文件（高级用法，跨系统兜底）。
-  Future<String?> _legacyRestoreJson() async {
+  /// 解析并校验备份：只认本应用的版本 1 快照。
+  Map<String, dynamic> _parseBackup(String json) {
+    if (json.trim().isEmpty) {
+      throw const FormatException('文件是空的');
+    }
+    final dynamic decoded;
+    try {
+      decoded = jsonDecode(json);
+    } on FormatException {
+      throw const FormatException('文件不是 JSON，可能选错了文件');
+    }
+    if (decoded is! Map<String, dynamic> || decoded['version'] != 1) {
+      throw const FormatException('这不是宝宝日常导出的备份文件');
+    }
+    return decoded;
+  }
+
+  /// 备份摘要：让用户在覆盖前确认选对了文件。
+  String _describeBackup(Map<String, dynamic> data) {
+    final lines = <String>[];
+    final exportedAt = data['exported_at'];
+    if (exportedAt is String) {
+      final t = DateTime.tryParse(exportedAt)?.toLocal();
+      if (t != null) {
+        String two(int v) => v.toString().padLeft(2, '0');
+        lines.add(
+          '导出时间：${t.year}-${two(t.month)}-${two(t.day)} '
+          '${two(t.hour)}:${two(t.minute)}',
+        );
+      }
+    }
+    final character = data['character'];
+    if (character is Map) {
+      final name = character['name'];
+      final xp = character['xp'];
+      lines.add(
+        '主角：${name is String ? name : '（未命名）'}'
+        '${xp is int ? ' · Lv.${levelForXp(xp)}' : ''}',
+      );
+    } else {
+      lines.add('主角：备份里没有主角');
+    }
+    final tasks = data['tasks'];
+    if (tasks is List) lines.add('任务：${tasks.length} 个');
+    final notes = data['notes'];
+    if (notes is List) lines.add('笔记：${notes.length} 篇');
+    return lines.join('\n');
+  }
+
+  /// 通道不可用时的兜底：应用文档目录里的 babydaily_restore.json。
+  Future<void> _importLegacyFile(BuildContext context) async {
+    String? path;
     try {
       final dir = await _documentsDir();
       final file = File(p.join(dir, 'babydaily_restore.json'));
-      return await file.exists() ? file.path : null;
+      path = await file.exists() ? file.path : null;
     } catch (_) {
-      return null;
+      path = null;
     }
+    if (!context.mounted) return;
+    if (path == null) {
+      await _showImportGuide(context);
+      return;
+    }
+    final json = await File(path).readAsString();
+    if (!context.mounted) return;
+    await _restoreFromJson(context, json, 'babydaily_restore.json');
   }
 
-  Future<String?> _showPickDialog(
-    BuildContext context,
-    Iterable<Map<dynamic, dynamic>> files,
-    String? legacyPath,
-  ) {
-    return showDialog<String>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('导入备份'),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: ListView(
-            shrinkWrap: true,
-            children: [
-              for (final m in files)
-                _backupTile(
-                  dialogContext,
-                  name: (m['name'] ?? '') as String,
-                  timestamp: (m['timestamp'] ?? 0) as int,
-                  readable: (m['readable'] ?? false) == true,
-                ),
-              if (legacyPath != null)
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: const ClayAvatar(
-                    icon: Icons.folder_outlined,
-                    color: Color(0xFF8E7CC3),
-                    size: 40,
-                    iconSize: 20,
-                  ),
-                  title: const Text('babydaily_restore.json（应用内部目录）'),
-                  subtitle: const Text('高级：通过电脑把备份放到应用文档目录'),
-                  onTap: () =>
-                      Navigator.of(dialogContext).pop(_legacyPickValue),
-                ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('取消'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _backupTile(
-    BuildContext context, {
-    required String name,
-    required int timestamp,
-    required bool readable,
-  }) {
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      leading: ClayAvatar(
-        icon: Icons.description_outlined,
-        color: readable
-            ? Theme.of(context).colorScheme.primary
-            : Theme.of(context).colorScheme.onSurfaceVariant,
-        size: 40,
-        iconSize: 20,
-      ),
-      title: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis),
-      subtitle: Text(
-        '备份时间：${_formatStamp(timestamp)}'
-        '${readable ? '' : ' · 非本应用导出，无法读取'}',
-      ),
-      onTap: readable
-          ? () => Navigator.of(context).pop(name)
-          : () {
-              ScaffoldMessenger.of(context)
-                ..hideCurrentSnackBar()
-                ..showSnackBar(
-                  const SnackBar(content: Text('该备份不是本应用导出的文件，无法读取')),
-                );
-            },
-    );
-  }
-
-  String _formatStamp(int seconds) {
-    final t = DateTime.fromMillisecondsSinceEpoch(seconds * 1000);
-    String two(int v) => v.toString().padLeft(2, '0');
-    return '${t.year}-${two(t.month)}-${two(t.day)} ${two(t.hour)}:${two(t.minute)}';
-  }
-
-  Future<void> _showImportGuide(BuildContext context, bool channelOk) async {
+  Future<void> _showImportGuide(BuildContext context) async {
     await showDialog<void>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('未找到可导入的备份'),
+        title: const Text('无法打开文件选择器'),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('备份文件放在手机的「$_backupFolder」文件夹：'),
+              const Text('当前系统的文件选择器不可用。可以这样恢复备份：'),
               const SizedBox(height: 8),
               Text(
-                '· 用本应用先「导出备份」，文件会自动出现在那里；\n'
-                '· 从旧手机拷来的备份 json 也可以放进这个文件夹'
-                '（不过只有本应用导出的文件才能读取）。',
+                '· 把备份 json 改名为 babydaily_restore.json，'
+                '放进应用文档目录后重新点「导入备份」；\n'
+                '· 或先在本机「导出备份」，再从「$_backupFolder」里取用。',
                 style: Theme.of(dialogContext).textTheme.bodySmall,
               ),
-              if (!channelOk) ...[
-                const SizedBox(height: 8),
-                Text(
-                  '当前系统不支持公共目录；可将导出文件按旧方法改名为 '
-                  'babydaily_restore.json 放入应用文档目录后重试。',
-                  style: Theme.of(dialogContext).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(dialogContext).colorScheme.error,
-                  ),
-                ),
-              ],
             ],
           ),
         ),
@@ -405,12 +374,34 @@ class SettingsPage extends StatelessWidget {
     );
   }
 
-  Future<bool?> _confirmOverwrite(BuildContext context, String fileName) {
+  Future<bool?> _confirmOverwrite(
+    BuildContext context,
+    String fileName,
+    Map<String, dynamic> data,
+  ) {
     return showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('导入备份'),
-        content: Text('将用「$fileName」覆盖当前所有数据，确定继续吗？'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              fileName,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _describeBackup(data),
+              style: Theme.of(dialogContext).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 12),
+            const Text('导入会覆盖当前所有数据，确定继续吗？'),
+          ],
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(false),
