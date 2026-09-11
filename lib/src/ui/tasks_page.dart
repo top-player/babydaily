@@ -1,15 +1,19 @@
-/// 任务页：主线（可展开子项）/ 支线 / 每日任务 三区 + 已完成归档。
+/// 任务页：主线（可展开子项）/ 支线 两区 + 已完成 / 已失败归档。
+///
+/// 每日任务搬到独立的每日任务页（今天 + 按日期滑动的历史），
+/// 页首卡片是入口并显示今天的完成进度。
 library;
 
 import 'package:flutter/material.dart';
 import 'package:babydaily/src/data/database.dart';
-import 'package:babydaily/src/domain/attributes.dart';
 import 'package:babydaily/src/domain/enums.dart';
 import 'package:babydaily/src/domain/game_service.dart';
 import 'package:babydaily/src/domain/xp_economy.dart';
 import 'package:babydaily/src/ui/app_controller.dart';
 import 'package:babydaily/src/ui/clay.dart';
+import 'package:babydaily/src/ui/daily_tasks_page.dart';
 import 'package:babydaily/src/ui/feedback.dart';
+import 'package:babydaily/src/ui/task_editor.dart';
 import 'package:babydaily/src/ui/theme.dart';
 
 const Color _kMainColor = Color(0xFFC7771F);
@@ -27,9 +31,11 @@ class TasksPage extends StatefulWidget {
 class _TasksPageState extends State<TasksPage> {
   List<Task> _mainlines = [];
   List<Task> _sides = [];
-  List<Task> _daily = [];
   List<Task> _archive = [];
+  List<Task> _failed = [];
   Map<int, List<Subtask>> _subtasksByTask = {};
+  int _dailyTotal = 0;
+  int _dailyDone = 0;
   bool _loadStarted = false;
 
   @override
@@ -46,18 +52,22 @@ class _TasksPageState extends State<TasksPage> {
   Future<void> _load() async {
     final service = AppScope.read(context).service;
     // 各路查询并行发起，减少串行等待。
-    final mainlinesF = service.tasksByType(TaskType.mainline, completed: false);
-    final sidesF = service.tasksByType(TaskType.side, completed: false);
-    final dailyF = service.dailyTasks();
+    final mainlinesF = service.tasksByType(TaskType.mainline);
+    final sidesF = service.tasksByType(TaskType.side);
     final archiveMainF = service.tasksByType(
       TaskType.mainline,
       completed: true,
     );
     final archiveSideF = service.tasksByType(TaskType.side, completed: true);
+    final failedMainF = service.tasksByType(TaskType.mainline, failed: true);
+    final failedSideF = service.tasksByType(TaskType.side, failed: true);
+    final dailyF = service.dailyTasks();
     final mainlines = await mainlinesF;
     final sides = await sidesF;
-    final daily = await dailyF;
     final archive = [...await archiveMainF, ...await archiveSideF];
+    final failed = [...await failedMainF, ...await failedSideF];
+    final daily = await dailyF;
+    final today = dateString(DateTime.now());
     final subtasksByTask = <int, List<Subtask>>{};
     await Future.wait([
       for (final t in mainlines)
@@ -67,9 +77,11 @@ class _TasksPageState extends State<TasksPage> {
       setState(() {
         _mainlines = mainlines;
         _sides = sides;
-        _daily = daily;
         _archive = archive;
+        _failed = failed;
         _subtasksByTask = subtasksByTask;
+        _dailyTotal = daily.length;
+        _dailyDone = daily.where((t) => t.completedOn == today).length;
       });
     }
   }
@@ -94,12 +106,6 @@ class _TasksPageState extends State<TasksPage> {
       return;
     }
     await _afterMutation(outcome);
-    if (!mounted) return;
-    if (task.type == TaskType.daily) {
-      final today = dateString(DateTime.now());
-      final allDone = _daily.every((t) => t.completedOn == today);
-      if (allDone) showCelebration(context, '每日任务全清，今天也很棒！');
-    }
   }
 
   Future<void> _completeSubtask(Task mainline, Subtask subtask) async {
@@ -113,16 +119,42 @@ class _TasksPageState extends State<TasksPage> {
     }
   }
 
+  /// 手动判失败：主线/支线不发奖、不扣属性，失败后进「已失败」归档且不删除。
+  Future<void> _failTask(Task task) async {
+    final confirmed = await confirmFailTask(context, task);
+    if (!confirmed || !mounted) return;
+    final failOutcome = await AppScope.read(
+      context,
+    ).service.failTask(task.id, now: DateTime.now());
+    if (!mounted) return;
+    await _afterMutation(null);
+    if (!mounted || failOutcome == null) return;
+    showNotice(context, '「${failOutcome.taskName}」已标记失败，任务保留在已失败里');
+  }
+
+  Future<void> _openDailyPage() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => const DailyTasksPage()),
+    );
+    await _load();
+  }
+
   @override
   Widget build(BuildContext context) {
+    final empty = _mainlines.isEmpty &&
+        _sides.isEmpty &&
+        _archive.isEmpty &&
+        _failed.isEmpty &&
+        _dailyTotal == 0;
     return Scaffold(
       appBar: AppBar(title: const Text('任务')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          if (_mainlines.isEmpty && _sides.isEmpty && _daily.isEmpty)
+          _dailyEntryCard(),
+          if (empty)
             Padding(
-              padding: const EdgeInsets.symmetric(vertical: 48),
+              padding: const EdgeInsets.symmetric(vertical: 32),
               child: Column(
                 children: [
                   ClayAvatar(
@@ -161,17 +193,6 @@ class _TasksPageState extends State<TasksPage> {
             ),
             for (final t in _sides) _sideCard(t),
           ],
-          if (_daily.isNotEmpty) ...[
-            _sectionHeader(
-              context,
-              icon: Icons.today,
-              color: _kDailyColor,
-              title: '每日任务',
-              subtitle: '每天 0 点重置',
-              count: _daily.length,
-            ),
-            for (final t in _daily) _dailyCard(t),
-          ],
           if (_archive.isNotEmpty) ...[
             _sectionHeader(
               context,
@@ -183,16 +204,84 @@ class _TasksPageState extends State<TasksPage> {
             ),
             for (final t in _archive) _archiveCard(t),
           ],
+          if (_failed.isNotEmpty) ...[
+            _sectionHeader(
+              context,
+              icon: Icons.cancel,
+              color: kFailColor,
+              title: '已失败',
+              subtitle: '没做成的事也留在路上',
+              count: _failed.length,
+            ),
+            for (final t in _failed) _failedCard(t),
+          ],
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
         heroTag: 'tasks-fab',
         onPressed: () async {
-          await _showTaskDialog(context);
+          await showTaskDialog(
+            context,
+            allowedTypes: const [TaskType.mainline, TaskType.side],
+          );
           await _load();
         },
         icon: const Icon(Icons.add),
         label: const Text('添加任务'),
+      ),
+    );
+  }
+
+  /// 每日任务入口卡：显示今天的进度，点进去看今天的操作与历史。
+  Widget _dailyEntryCard() {
+    final scheme = Theme.of(context).colorScheme;
+    return Card(
+      margin: const EdgeInsets.only(bottom: 14),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(22),
+        onTap: _openDailyPage,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
+          child: Row(
+            children: [
+              const ClayAvatar(
+                icon: Icons.today,
+                color: _kDailyColor,
+                size: 40,
+                iconSize: 20,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '每日任务',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      _dailyTotal == 0
+                          ? '还没有每日任务，点进去加一个'
+                          : '今天 $_dailyDone/$_dailyTotal 已完成 · 0 点未完成会扣属性',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                ),
+              ),
+              Text(
+                '历史',
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  color: scheme.primary,
+                ),
+              ),
+              Icon(Icons.chevron_right, color: scheme.primary),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -239,10 +328,7 @@ class _TasksPageState extends State<TasksPage> {
           color: kCharmColor,
           icon: Icons.auto_awesome,
         ),
-      if (t.type == TaskType.daily &&
-          t.rewardHealth == 0 &&
-          t.rewardDiscipline == 0 &&
-          t.rewardCharm == 0)
+      if (t.rewardHealth == 0 && t.rewardDiscipline == 0 && t.rewardCharm == 0)
         TagPill(text: '无属性奖励', color: scheme.onSurfaceVariant),
     ];
     return Wrap(spacing: 6, runSpacing: 6, children: chips);
@@ -261,6 +347,7 @@ class _TasksPageState extends State<TasksPage> {
                 _kMainColor => Icons.flag,
                 _kSideColor => Icons.eco,
                 _kDailyColor => Icons.today,
+                kFailColor => Icons.cancel,
                 _ => Icons.emoji_events,
               },
               color: accent,
@@ -275,12 +362,23 @@ class _TasksPageState extends State<TasksPage> {
     );
   }
 
-  Widget _menuButton(Task t, {List<Subtask>? subtasks}) {
+  Widget _menuButton(
+    Task t, {
+    List<Subtask>? subtasks,
+    bool allowFail = true,
+  }) {
     return PopupMenuButton<String>(
       onSelected: (value) async {
         if (value == 'edit') {
-          await _showTaskDialog(context, task: t, subtasks: subtasks);
+          await showTaskDialog(
+            context,
+            task: t,
+            subtasks: subtasks,
+            allowedTypes: const [TaskType.mainline, TaskType.side],
+          );
           await _load();
+        } else if (value == 'fail') {
+          await _failTask(t);
         } else if (value == 'delete') {
           final confirmed = await _confirmDelete(context, t.name);
           if (confirmed && mounted) {
@@ -289,9 +387,10 @@ class _TasksPageState extends State<TasksPage> {
           }
         }
       },
-      itemBuilder: (context) => const [
-        PopupMenuItem(value: 'edit', child: Text('编辑')),
-        PopupMenuItem(value: 'delete', child: Text('删除')),
+      itemBuilder: (context) => [
+        const PopupMenuItem(value: 'edit', child: Text('编辑')),
+        if (allowFail) const PopupMenuItem(value: 'fail', child: Text('标记失败')),
+        const PopupMenuItem(value: 'delete', child: Text('删除')),
       ],
     );
   }
@@ -329,27 +428,7 @@ class _TasksPageState extends State<TasksPage> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      t.name,
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    if (t.description.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 2),
-                        child: Text(
-                          t.description,
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                      ),
-                  ],
-                ),
-              ),
+              Expanded(child: _taskTitle(t)),
               _menuButton(t, subtasks: subtasks),
             ],
           ),
@@ -412,6 +491,28 @@ class _TasksPageState extends State<TasksPage> {
     );
   }
 
+  Widget _taskTitle(Task t) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          t.name,
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        if (t.description.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Text(
+              t.description,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ),
+      ],
+    );
+  }
+
   Widget _addSubtaskRow(Task t) {
     return Align(
       alignment: Alignment.centerLeft,
@@ -465,27 +566,7 @@ class _TasksPageState extends State<TasksPage> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      t.name,
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    if (t.description.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 2),
-                        child: Text(
-                          t.description,
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                      ),
-                  ],
-                ),
-              ),
+              Expanded(child: _taskTitle(t)),
               _menuButton(t),
             ],
           ),
@@ -503,104 +584,6 @@ class _TasksPageState extends State<TasksPage> {
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _dailyCard(Task t) {
-    final today = dateString(DateTime.now());
-    final done = t.completedOn == today;
-    final penaltyText = [
-      if (t.rewardHealth > 0) '健康 -${t.rewardHealth}',
-      if (t.rewardDiscipline > 0) '自律 -${t.rewardDiscipline}',
-      if (t.rewardCharm > 0) '魅力 -${t.rewardCharm}',
-    ].join('、');
-    return _cardShell(
-      context,
-      _kDailyColor,
-      Opacity(
-        opacity: done ? 0.8 : 1,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        t.name,
-                        style: Theme.of(context).textTheme.titleMedium
-                            ?.copyWith(fontWeight: FontWeight.w800),
-                      ),
-                      if (t.description.isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 2),
-                          child: Text(
-                            t.description,
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-                _menuButton(t),
-              ],
-            ),
-            const SizedBox(height: 8),
-            _rewardChips(t),
-            const SizedBox(height: 10),
-            if (done)
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                decoration: BoxDecoration(
-                  color: kHealthColor.withValues(alpha: 0.13),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(
-                      Icons.check_circle,
-                      size: 20,
-                      color: kHealthColor,
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      '今日已完成，明天继续',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        color: kHealthColor,
-                      ),
-                    ),
-                  ],
-                ),
-              )
-            else ...[
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton(
-                  style: FilledButton.styleFrom(
-                    minimumSize: const Size.fromHeight(44),
-                  ),
-                  onPressed: () => _completeTask(t),
-                  child: const Text('完成'),
-                ),
-              ),
-              if (penaltyText.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(top: 6),
-                  child: Text(
-                    '未完成将在 0 点扣除：$penaltyText',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                ),
-            ],
-          ],
-        ),
       ),
     );
   }
@@ -631,172 +614,44 @@ class _TasksPageState extends State<TasksPage> {
               ],
             ),
           ),
-          _menuButton(t),
+          _menuButton(t, allowFail: false),
         ],
       ),
     );
   }
 
-  // ---- 创建 / 编辑对话框 ----
-
-  Future<void> _showTaskDialog(
-    BuildContext context, {
-    Task? task,
-    List<Subtask>? subtasks,
-  }) async {
-    final controller = AppScope.read(context);
-    final nameController = TextEditingController(text: task?.name ?? '');
-    final descController = TextEditingController(text: task?.description ?? '');
-    final healthController = TextEditingController(
-      text: task != null && task.rewardHealth > 0
-          ? '${task.rewardHealth}'
-          : '0',
-    );
-    final disciplineController = TextEditingController(
-      text: task != null && task.rewardDiscipline > 0
-          ? '${task.rewardDiscipline}'
-          : (task == null ? '1' : '0'),
-    );
-    final charmController = TextEditingController(
-      text: task != null && task.rewardCharm > 0 ? '${task.rewardCharm}' : '0',
-    );
-    final subtasksController = TextEditingController(
-      text: (subtasks ?? const <Subtask>[]).map((s) => s.name).join('\n'),
-    );
-
-    var type = task?.type ?? TaskType.mainline;
-
-    final result = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: Text(task == null ? '添加任务' : '编辑任务'),
-          content: SingleChildScrollView(
+  Widget _failedCard(Task t) {
+    final when = t.failedAt;
+    return _cardShell(
+      context,
+      kFailColor,
+      Row(
+        children: [
+          Expanded(
             child: Column(
-              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                SegmentedButton<TaskType>(
-                  segments: const [
-                    ButtonSegment(value: TaskType.mainline, label: Text('主线')),
-                    ButtonSegment(value: TaskType.side, label: Text('支线')),
-                    ButtonSegment(value: TaskType.daily, label: Text('每日任务')),
-                  ],
-                  selected: {type},
-                  onSelectionChanged: task == null
-                      ? (s) => setDialogState(() => type = s.first)
-                      : null, // 编辑不改类型
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: nameController,
-                  maxLength: 30,
-                  decoration: const InputDecoration(labelText: '名称'),
-                ),
-                TextField(
-                  controller: descController,
-                  maxLength: 100,
-                  decoration: const InputDecoration(labelText: '描述（可选）'),
-                ),
-                const SizedBox(height: 12),
-                Text('奖励（属性）', style: Theme.of(context).textTheme.titleSmall),
-                Row(
-                  children: [
-                    Expanded(child: _rewardField('健康', healthController)),
-                    const SizedBox(width: 8),
-                    Expanded(child: _rewardField('自律', disciplineController)),
-                    const SizedBox(width: 8),
-                    Expanded(child: _rewardField('魅力', charmController)),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Text(switch (type) {
-                  TaskType.mainline => '固定经验 +50（最后一个子项完成时发放）',
-                  TaskType.side => '固定经验 +20',
-                  TaskType.daily => '0 点未完成会扣除上面的属性',
-                }, style: Theme.of(context).textTheme.bodySmall),
-                if (type == TaskType.mainline && task == null) ...[
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: subtasksController,
-                    maxLines: 3,
-                    maxLength: 200,
-                    decoration: const InputDecoration(
-                      labelText: '子项（可选，每行一个）',
-                      alignLabelWithHint: true,
-                    ),
+                Text(
+                  t.name,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    decoration: TextDecoration.lineThrough,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
-                ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '${t.type == TaskType.mainline ? '主线' : '支线'} · '
+                  '${when != null ? '${when.year}/${when.month}/${when.day} 失败' : '失败'}'
+                  ' · 任务保留',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
               ],
             ),
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: const Text('取消'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(dialogContext).pop(true),
-              child: const Text('保存'),
-            ),
-          ],
-        ),
+          _menuButton(t, allowFail: false),
+        ],
       ),
-    );
-
-    if (result != true) return;
-
-    final name = nameController.text.trim();
-    if (name.isEmpty) return;
-    final reward = AttributeDelta(
-      health: (int.tryParse(healthController.text) ?? 0).clamp(0, 100),
-      discipline: (int.tryParse(disciplineController.text) ?? 0).clamp(0, 100),
-      charm: (int.tryParse(charmController.text) ?? 0).clamp(0, 100),
-    );
-
-    if (task == null) {
-      final id = await controller.service.createTask(
-        name: name,
-        description: descController.text.trim(),
-        type: type,
-        reward: reward,
-      );
-      final lines = subtasksController.text
-          .split('\n')
-          .map((l) => l.trim())
-          .where((l) => l.isNotEmpty);
-      for (final line in lines) {
-        await controller.service.createSubtask(taskId: id, name: line);
-      }
-    } else {
-      await controller.service.updateTask(
-        id: task.id,
-        name: name,
-        description: descController.text.trim(),
-        reward: reward,
-      );
-    }
-  }
-
-  Widget _rewardField(String label, TextEditingController controller) {
-    // 浮动标签（M3 描边式）会压在边框线上、与上方标题重叠，
-    // 所以改用"框外小标题 + 无标签输入框"的布局。
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(left: 12),
-          child: Text(label, style: Theme.of(context).textTheme.bodySmall),
-        ),
-        const SizedBox(height: 4),
-        Semantics(
-          label: label,
-          child: TextField(
-            controller: controller,
-            keyboardType: TextInputType.number,
-            decoration: const InputDecoration(),
-          ),
-        ),
-      ],
     );
   }
 }

@@ -62,6 +62,31 @@ void showCelebration(BuildContext context, String message) {
     );
 }
 
+/// 中性提示（任务失败、扣除属性等非庆祝场景，不带头部表情）。
+void showNotice(
+  BuildContext context,
+  String message, {
+  bool warning = false,
+}) {
+  final scheme = Theme.of(context).colorScheme;
+  ScaffoldMessenger.of(context)
+    ..hideCurrentSnackBar()
+    ..showSnackBar(
+      SnackBar(
+        backgroundColor: warning ? scheme.errorContainer : scheme.primaryContainer,
+        content: Text(
+          message,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: warning ? scheme.onErrorContainer : scheme.onPrimaryContainer,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        duration: const Duration(seconds: 3),
+      ),
+    );
+}
+
 void _showGainOverlay(BuildContext context, GrowthOutcome outcome) {
   final overlay = Overlay.of(context);
   late OverlayEntry entry;

@@ -61,6 +61,9 @@ const Color kHealthColor = Color(0xFF2E9E5B);
 const Color kDisciplineColor = Color(0xFF4A7FBE);
 const Color kCharmColor = Color(0xFFC25E9E);
 
+/// 失败与惩罚的强调色（比纯红柔和，和黏土暖色调同族）。
+const Color kFailColor = Color(0xFFC0503F);
+
 /// 由场景驱动的黏土风主题：奶油底 + 大圆角 + 柔和阴影。
 ThemeData buildTheme(Scene scene, {Brightness brightness = Brightness.light}) {
   final atmosphere = atmosphereOf(scene);
