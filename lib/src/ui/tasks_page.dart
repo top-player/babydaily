@@ -289,8 +289,7 @@ class _TasksPageState extends State<TasksPage> {
                           _daily.isEmpty
                               ? '还没有每日任务，点进来加一个'
                               : '今天 $done/${_daily.length} 已完成'
-                                  '${failed > 0 ? ' · $failed 失败' : ''}'
-                                  ' · 0 点未完成扣属性',
+                                  '${failed > 0 ? ' · $failed 失败' : ''}',
                           style: Theme.of(context).textTheme.bodySmall,
                         ),
                       ],
@@ -312,6 +311,15 @@ class _TasksPageState extends State<TasksPage> {
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                   ),
+                Padding(
+                  padding: const EdgeInsets.only(top: 6, left: 30),
+                  child: Text(
+                    '0 点未完成会扣属性并记为失败',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
               ],
             ],
           ),
@@ -579,7 +587,7 @@ class _TasksPageState extends State<TasksPage> {
           if (collapsed)
             _collapsedSummary(
               subtasks.isEmpty
-                  ? (t.description.isEmpty ? '点右侧 ⋮ 可编辑或标记失败' : t.description)
+                  ? (t.description.isEmpty ? null : t.description)
                   : '子项 ${subtasks.length - undone}/${subtasks.length} 已完成',
             )
           else ...[
@@ -648,8 +656,9 @@ class _TasksPageState extends State<TasksPage> {
     );
   }
 
-  /// 折叠态的摘要行（一行说明，卡片随即变得很矮）。
-  Widget _collapsedSummary(String text) {
+  /// 折叠态的摘要行：没有可摘要的内容（无描述、无子项）时整行不渲染。
+  Widget _collapsedSummary(String? text) {
+    if (text == null || text.isEmpty) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.only(top: 4, right: 8),
       child: Text(
@@ -740,11 +749,7 @@ class _TasksPageState extends State<TasksPage> {
             onToggle: () => _toggleTask(t.id),
           ),
           if (collapsed)
-            _collapsedSummary(
-              t.description.isEmpty
-                  ? '点右侧 ⋮ 可编辑或标记失败'
-                  : t.description,
-            )
+            _collapsedSummary(t.description.isEmpty ? null : t.description)
           else ...[
             if (t.description.isNotEmpty) ...[
               const SizedBox(height: 6),
