@@ -39,7 +39,10 @@ flutter build apk --release --split-per-abi --split-debug-info=build/symbols --o
 ```sh
 python tools/icons/gen_icons.py      # 五档传统图标 48–192px + 五档自适应前景（108/108 dp 满铺）
 python tools/icons/verify_icon2.py   # 合成圆形/圆角方形/方形遮罩预览，核对底色与前景无接缝
+python tools/icons/icon_audit.py     # 核对手机里装的图标与仓库资源是否一致（先 adb pull 安装包）
 ```
 
 - API < 26 用 `ic_launcher.png`（原图圆角方块直接缩放）。
 - API ≥ 26 用自适应图标：前景按 108/108 dp 满铺遮罩视口，底色层 `#FCF0DF` 与前景方块填色通道差 ≤1，任何遮罩形状下都不会露出色环或接缝。
+- 真正进包的是 `mipmap-*` 下的 PNG，`icon2.png` 只是源图：**换图后必须重跑 `gen_icons.py` 再重新构建安装**。脚本里的裁剪框 `TILE_BOX = (23, 28, 366, 364)` 是按当前 386×386 的源图量的，换新图要重新量，否则会裁错。
+- 改完图标但桌面还是旧图时，先分清两件事：`icon_audit.py` 一致 ⇒ 包里已是新图，那就是启动器缓存——小米/红米（MIUI/HyperOS）桌面按包名缓存图标位图，`adb install -r` 覆盖安装**不会**刷新已放在桌面上的图标。刷新办法：把桌面图标拖掉重新添加、重启手机，或「设置 → 应用设置 → 应用管理 → 系统桌面 → 清除缓存」（别点清除数据，会重置桌面布局）。若主题开了「图标重绘」或用了图标包，桌面图标由主题提供，改应用自身图标不会生效。
