@@ -20,21 +20,33 @@ class AppController extends ChangeNotifier {
   bool _initialized = false;
   bool get initialized => _initialized;
 
+  /// 今天是否已领到每日登录经验（主角页据此显示一枚小标记）。
+  bool loginXpClaimedToday = false;
+
   bool get hasCharacter => character != null;
 
   Future<void> init() async {
     await _settleIfNeeded();
     character = await service.character();
+    loginXpClaimedToday =
+        await service.loginXpClaimedOn(DateTime.now());
     scene = await service.getScene() ?? Scene.home;
     _initialized = true;
     notifyListeners();
   }
 
-  /// 应用回到前台/启动时，触发一次每日结算（内部幂等）。
+  /// 应用回到前台/启动时，触发一次每日结算与每日登录经验（内部幂等）。
   Future<void> settleIfNeeded() => _settleIfNeeded();
 
   Future<void> _settleIfNeeded() async {
-    await service.settleDay(now: DateTime.now());
+    final now = DateTime.now();
+    await service.settleDay(now: now);
+    final loginXp = await service.grantDailyLoginXp(now: now);
+    if (loginXp > 0) {
+      loginXpClaimedToday = true;
+      character = await service.character();
+      notifyListeners();
+    }
   }
 
   Future<void> createCharacter({

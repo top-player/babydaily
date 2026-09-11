@@ -501,10 +501,13 @@ class GameService {
             SettingsCompanion.insert(key: e.key, value: e.value),
         ]);
       });
-      // 恢复当天不再触发每日结算（友好：不给恢复动作加惩罚）
+      // 恢复当天不再触发每日结算与登录经验（友好：不给恢复动作加惩罚/奖励）
       await db.into(db.settings).insertOnConflictUpdate(
           SettingsCompanion.insert(
               key: 'last_settled_on', value: dateString(now)));
+      await db.into(db.settings).insertOnConflictUpdate(
+          SettingsCompanion.insert(
+              key: 'login_xp_granted_on', value: dateString(now)));
     });
   }
 
@@ -1086,6 +1089,38 @@ class GameService {
     final parts = s.split('-');
     return DateTime(
         int.parse(parts[0]), int.parse(parts[1]), int.parse(parts[2]));
+  }
+
+  // ---- 每日登录 ----
+
+  /// 每日登录经验：每天第一次打开应用 +1（不打开就不涨，ADR-0003）。
+  ///
+  /// 以设置项 login_xp_granted_on 记录已发放日期，同一天重复调用返回 0；
+  /// 还没有主角时不发放也不记账（引导完成当天仍能正常领到）。
+  Future<int> grantDailyLoginXp({required DateTime now}) {
+    return db.transaction(() async {
+      final today = dateString(now);
+      final row = await (db.select(db.characters)..where((c) => c.id.equals(1)))
+          .getSingleOrNull();
+      if (row == null) return 0;
+      final granted = await (db.select(db.settings)
+            ..where((s) => s.key.equals('login_xp_granted_on')))
+          .getSingleOrNull();
+      if (granted?.value == today) return 0;
+
+      await _grant(xp: dailyLoginXp, attrs: AttributeDelta.zero);
+      await db.into(db.settings).insertOnConflictUpdate(SettingsCompanion.insert(
+          key: 'login_xp_granted_on', value: today));
+      return dailyLoginXp;
+    });
+  }
+
+  /// [day] 当天是否已领取每日登录经验。
+  Future<bool> loginXpClaimedOn(DateTime day) async {
+    final row = await (db.select(db.settings)
+          ..where((s) => s.key.equals('login_xp_granted_on')))
+        .getSingleOrNull();
+    return row?.value == dateString(day);
   }
 
   // ---- 每日结算 ----

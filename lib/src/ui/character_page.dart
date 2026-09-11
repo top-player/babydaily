@@ -211,6 +211,14 @@ class CharacterPage extends StatelessWidget {
                   ),
                 ],
               ),
+              if (controller.loginXpClaimedToday) ...[
+                const SizedBox(height: 8),
+                TagPill(
+                  icon: Icons.wb_sunny_outlined,
+                  text: '今日登录 +$dailyLoginXp 经验已到账',
+                  color: scheme.primary,
+                ),
+              ],
             ] else
               TagPill(
                 icon: Icons.emoji_events,

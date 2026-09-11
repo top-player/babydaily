@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:babydaily/src/data/database.dart';
 import 'package:babydaily/src/domain/attributes.dart';
 import 'package:babydaily/src/domain/enums.dart';
+import 'package:babydaily/src/domain/xp_economy.dart';
 import 'package:babydaily/src/ui/app_controller.dart';
 
 /// 类型选择器里可用的类型（每日任务页只允许建每日任务）。
@@ -164,9 +165,10 @@ String taskTypeLabel(TaskType type) => switch (type) {
 
 /// 类型在表单里的规则说明。
 String taskTypeHint(TaskType type) => switch (type) {
-      TaskType.mainline => '固定经验 +50（最后一个子项完成时发放）',
-      TaskType.side => '固定经验 +20',
-      TaskType.daily => '0 点未完成会扣除上面的属性，并记为失败（任务保留）',
+      TaskType.mainline => '固定经验 +$mainlineXp（最后一个子项完成时发放）',
+      TaskType.side => '固定经验 +$sideQuestXp',
+      TaskType.daily => '固定经验 +$dailyTaskXp；0 点未完成会扣除上面的属性，'
+          '并记为失败（任务保留）',
     };
 
 /// 失败二次确认：说清代价（每日任务立即扣属性；主线/支线进「已失败」归档）。

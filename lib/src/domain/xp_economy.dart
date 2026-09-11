@@ -13,8 +13,11 @@ const int startingLevel = 1;
 const int mainlineXp = 50;
 const int sideQuestXp = 20;
 const int subtaskXp = 0;
-const int dailyTaskXp = 0;
+const int dailyTaskXp = 1;
 const int habitCheckinXp = 5;
+
+/// 每日登录经验：每天第一次打开应用 +1（不打开不涨）。
+const int dailyLoginXp = 1;
 
 /// 每日习惯连续里程碑：连续天数 → 一次性经验奖励。
 const Map<int, int> milestoneRewards = {10: 20, 20: 30, 30: 50};

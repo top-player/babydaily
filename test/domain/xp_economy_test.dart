@@ -87,8 +87,9 @@ void main() {
       expect(mainlineXp, 50);
       expect(sideQuestXp, 20);
       expect(subtaskXp, 0);
-      expect(dailyTaskXp, 0);
+      expect(dailyTaskXp, 1);
       expect(habitCheckinXp, 5);
+      expect(dailyLoginXp, 1);
     });
 
     test('每日习惯连续里程碑（每习惯终身一次）', () {

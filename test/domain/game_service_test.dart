@@ -88,7 +88,7 @@ void main() {
       expect(levelForXp(c.xp), 1); // 20 < 40，未升级
     });
 
-    test('每日任务完成：0 经验、只发属性', () async {
+    test('每日任务完成：+1 经验，属性照发', () async {
       await service.createCharacter(name: '小明', age: 18, gender: Gender.male);
       final id = await service.createTask(
         name: '早起喝水',
@@ -100,7 +100,7 @@ void main() {
       expect(outcome!.xpGained, dailyTaskXp);
       expect(outcome.attrGain, const AttributeDelta(health: 0, discipline: 1, charm: 0));
       final c = (await service.character())!;
-      expect(c.xp, 0);
+      expect(c.xp, 1);
       expect(c.discipline, 51);
     });
 
@@ -420,7 +420,7 @@ void main() {
       final c = (await service.character())!;
       expect(c.health, 48); // 50 - 2
       expect(c.discipline, 51); // 完成的任务 +1，未被扣
-      expect(c.xp, 0); // 经验从不被扣
+      expect(c.xp, dailyTaskXp); // 完成的每日任务 +1，结算只扣属性不扣经验
 
       // 未完成的任务记为失败：任务保留、历史留痕
       expect(await service.dailyTasks(), hasLength(2));
@@ -516,6 +516,49 @@ void main() {
       expect(outcome!.totalPenalty, AttributeDelta.zero);
       expect((await service.character())!.health, 48);
       expect(await service.dailyLogsOn(DateTime(2026, 6, 5)), hasLength(1));
+    });
+  });
+
+  group('每日登录经验', () {
+    test('每天第一次登录 +1，同日不重复，隔天再来 +1', () async {
+      await service.createCharacter(name: '小明', age: 18, gender: Gender.male);
+
+      expect(
+        await service.grantDailyLoginXp(now: DateTime(2026, 6, 5, 8)),
+        dailyLoginXp,
+      );
+      expect((await service.character())!.xp, 1);
+      expect(await service.loginXpClaimedOn(DateTime(2026, 6, 5)), isTrue);
+
+      // 同一天再进（切前台/重启）不重复发
+      expect(await service.grantDailyLoginXp(now: DateTime(2026, 6, 5, 20)), 0);
+      expect((await service.character())!.xp, 1);
+
+      // 第二天再登录 +1
+      expect(
+        await service.grantDailyLoginXp(now: DateTime(2026, 6, 6, 7)),
+        dailyLoginXp,
+      );
+      expect((await service.character())!.xp, 2);
+
+      // 中间没打开应用的日子不补发（6/7、6/8 没登录）
+      expect(await service.loginXpClaimedOn(DateTime(2026, 6, 8)), isFalse);
+      expect(
+        await service.grantDailyLoginXp(now: DateTime(2026, 6, 9, 7)),
+        dailyLoginXp,
+      );
+      expect((await service.character())!.xp, 3);
+    });
+
+    test('还没有主角时不发放也不记账', () async {
+      expect(await service.grantDailyLoginXp(now: DateTime(2026, 6, 5, 8)), 0);
+      expect(await service.loginXpClaimedOn(DateTime(2026, 6, 5)), isFalse);
+
+      await service.createCharacter(name: '小明', age: 18, gender: Gender.male);
+      expect(
+        await service.grantDailyLoginXp(now: DateTime(2026, 6, 5, 9)),
+        dailyLoginXp,
+      );
     });
   });
 
