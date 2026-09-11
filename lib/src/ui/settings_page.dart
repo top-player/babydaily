@@ -26,7 +26,7 @@ const MethodChannel _storageChannel = MethodChannel(
 const String _backupFolder = '下载/BabyDaily';
 
 /// 当前版本（与 pubspec.yaml 的 version 保持一致）。
-const String _appVersion = '1.0.2';
+const String _appVersion = '1.0.3';
 
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key});
