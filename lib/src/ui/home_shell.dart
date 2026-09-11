@@ -36,7 +36,7 @@ class _RootGateState extends State<RootGate> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      // 回到前台触发一次每日结算（内部幂等）
+      // 回到前台触发一次每日结算与每日登录经验（内部幂等）
       widget.controller.settleIfNeeded();
     }
   }
