@@ -33,10 +33,16 @@ class _TasksPageState extends State<TasksPage> {
   List<Task> _sides = [];
   List<Task> _archive = [];
   List<Task> _failed = [];
+  List<Task> _daily = [];
+  Set<int?> _dailyFailedToday = {};
   Map<int, List<Subtask>> _subtasksByTask = {};
-  int _dailyTotal = 0;
-  int _dailyDone = 0;
   bool _loadStarted = false;
+
+  /// 折叠起来的任务卡（默认展开）：点标题行或右侧箭头切换。
+  final Set<int> _collapsedTasks = {};
+  /// 已完成 / 已失败归档分区的折叠状态（默认展开）。
+  bool _archiveCollapsed = false;
+  bool _failedCollapsed = false;
 
   @override
   void didChangeDependencies() {
@@ -51,6 +57,7 @@ class _TasksPageState extends State<TasksPage> {
 
   Future<void> _load() async {
     final service = AppScope.read(context).service;
+    final today = DateTime.now();
     // 各路查询并行发起，减少串行等待。
     final mainlinesF = service.tasksByType(TaskType.mainline);
     final sidesF = service.tasksByType(TaskType.side);
@@ -62,12 +69,13 @@ class _TasksPageState extends State<TasksPage> {
     final failedMainF = service.tasksByType(TaskType.mainline, failed: true);
     final failedSideF = service.tasksByType(TaskType.side, failed: true);
     final dailyF = service.dailyTasks();
+    final dailyLogsF = service.dailyLogsOn(today);
     final mainlines = await mainlinesF;
     final sides = await sidesF;
     final archive = [...await archiveMainF, ...await archiveSideF];
     final failed = [...await failedMainF, ...await failedSideF];
     final daily = await dailyF;
-    final today = dateString(DateTime.now());
+    final dailyLogs = await dailyLogsF;
     final subtasksByTask = <int, List<Subtask>>{};
     await Future.wait([
       for (final t in mainlines)
@@ -79,9 +87,12 @@ class _TasksPageState extends State<TasksPage> {
         _sides = sides;
         _archive = archive;
         _failed = failed;
+        _daily = daily;
+        _dailyFailedToday = {
+          for (final log in dailyLogs)
+            if (log.status == DailyTaskStatus.failed) log.taskId,
+        };
         _subtasksByTask = subtasksByTask;
-        _dailyTotal = daily.length;
-        _dailyDone = daily.where((t) => t.completedOn == today).length;
       });
     }
   }
@@ -145,7 +156,7 @@ class _TasksPageState extends State<TasksPage> {
         _sides.isEmpty &&
         _archive.isEmpty &&
         _failed.isEmpty &&
-        _dailyTotal == 0;
+        _daily.isEmpty;
     return Scaffold(
       appBar: AppBar(title: const Text('任务')),
       body: ListView(
@@ -201,8 +212,12 @@ class _TasksPageState extends State<TasksPage> {
               title: '已完成',
               subtitle: '来时的路',
               count: _archive.length,
+              collapsed: _archiveCollapsed,
+              onToggle: () =>
+                  setState(() => _archiveCollapsed = !_archiveCollapsed),
             ),
-            for (final t in _archive) _archiveCard(t),
+            if (!_archiveCollapsed)
+              for (final t in _archive) _archiveCard(t),
           ],
           if (_failed.isNotEmpty) ...[
             _sectionHeader(
@@ -212,8 +227,10 @@ class _TasksPageState extends State<TasksPage> {
               title: '已失败',
               subtitle: '没做成的事也留在路上',
               count: _failed.length,
+              collapsed: _failedCollapsed,
+              onToggle: () => setState(() => _failedCollapsed = !_failedCollapsed),
             ),
-            for (final t in _failed) _failedCard(t),
+            if (!_failedCollapsed) for (final t in _failed) _failedCard(t),
           ],
         ],
       ),
@@ -232,56 +249,123 @@ class _TasksPageState extends State<TasksPage> {
     );
   }
 
-  /// 每日任务入口卡：显示今天的进度，点进去看今天的操作与历史。
+  /// 每日任务入口卡：今天进度 + 前几个任务，点卡片进入每日任务页。
   Widget _dailyEntryCard() {
     final scheme = Theme.of(context).colorScheme;
+    final today = dateString(DateTime.now());
+    final done = _daily.where((t) => t.completedOn == today).length;
+    final failed = _dailyFailedToday.length;
+    final preview = _daily.take(3).toList();
     return Card(
       margin: const EdgeInsets.only(bottom: 14),
       child: InkWell(
         borderRadius: BorderRadius.circular(22),
         onTap: _openDailyPage,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
-          child: Row(
+          padding: const EdgeInsets.fromLTRB(16, 14, 14, 14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const ClayAvatar(
-                icon: Icons.today,
-                color: _kDailyColor,
-                size: 40,
-                iconSize: 20,
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '每日任务',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w800,
-                      ),
+              Row(
+                children: [
+                  const ClayAvatar(
+                    icon: Icons.today,
+                    color: _kDailyColor,
+                    size: 40,
+                    iconSize: 20,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '每日任务',
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(fontWeight: FontWeight.w800),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          _daily.isEmpty
+                              ? '还没有每日任务，点进来加一个'
+                              : '今天 $done/${_daily.length} 已完成'
+                                  '${failed > 0 ? ' · $failed 失败' : ''}'
+                                  ' · 0 点未完成扣属性',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      _dailyTotal == 0
-                          ? '还没有每日任务，点进去加一个'
-                          : '今天 $_dailyDone/$_dailyTotal 已完成 · 0 点未完成会扣属性',
+                  ),
+                  Icon(Icons.chevron_right, color: scheme.primary),
+                ],
+              ),
+              if (preview.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                Divider(height: 1, color: scheme.outlineVariant),
+                const SizedBox(height: 4),
+                for (final t in preview) _dailyPreviewRow(t, today),
+                if (_daily.length > preview.length)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4, left: 30),
+                    child: Text(
+                      '还有 ${_daily.length - preview.length} 个每日任务…',
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
-                  ],
-                ),
-              ),
-              Text(
-                '历史',
-                style: TextStyle(
-                  fontWeight: FontWeight.w700,
-                  color: scheme.primary,
-                ),
-              ),
-              Icon(Icons.chevron_right, color: scheme.primary),
+                  ),
+              ],
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  /// 入口卡里的一行每日任务（只读状态，点击整卡进详情页）。
+  Widget _dailyPreviewRow(Task t, String today) {
+    final scheme = Theme.of(context).colorScheme;
+    final done = t.completedOn == today;
+    final failed = _dailyFailedToday.contains(t.id);
+    final color = done
+        ? kHealthColor
+        : failed
+            ? kFailColor
+            : scheme.onSurfaceVariant;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Row(
+        children: [
+          Icon(
+            done
+                ? Icons.check_circle
+                : failed
+                    ? Icons.cancel
+                    : Icons.radio_button_unchecked,
+            size: 18,
+            color: color,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              t.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                color: failed ? scheme.onSurfaceVariant : null,
+                decoration:
+                    done || failed ? TextDecoration.lineThrough : null,
+              ),
+            ),
+          ),
+          Text(
+            done ? '已完成' : (failed ? '失败' : '待完成'),
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: color,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -293,13 +377,33 @@ class _TasksPageState extends State<TasksPage> {
     required String title,
     required String subtitle,
     required int count,
+    bool collapsed = false,
+    VoidCallback? onToggle,
   }) {
-    return SectionHeader(
+    final header = SectionHeader(
       icon: icon,
       color: color,
       title: title,
       subtitle: subtitle,
-      trailing: TagPill(text: '$count', color: color),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TagPill(text: '$count', color: color),
+          if (onToggle != null)
+            Icon(
+              collapsed ? Icons.expand_more : Icons.expand_less,
+              size: 20,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+        ],
+      ),
+    );
+    if (onToggle == null) return header;
+    // 归档分区：整行可点，用来收起/展开
+    return InkWell(
+      onTap: onToggle,
+      borderRadius: BorderRadius.circular(14),
+      child: header,
     );
   }
 
@@ -416,77 +520,143 @@ class _TasksPageState extends State<TasksPage> {
     return result ?? false;
   }
 
+  /// 折叠/展开一张任务卡。
+  void _toggleTask(int taskId) {
+    setState(() {
+      if (!_collapsedTasks.remove(taskId)) _collapsedTasks.add(taskId);
+    });
+  }
+
+  /// 任务卡的标题行：点标题或右侧箭头折叠，右侧还有编辑/失败/删除菜单。
+  Widget _cardHeader(
+    Task t, {
+    required bool collapsed,
+    required VoidCallback onToggle,
+    List<Subtask>? subtasks,
+    bool allowFail = true,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: InkWell(
+            onTap: onToggle,
+            borderRadius: BorderRadius.circular(10),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Expanded(child: _taskTitle(t)),
+                Icon(
+                  collapsed ? Icons.expand_more : Icons.expand_less,
+                  size: 20,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ],
+            ),
+          ),
+        ),
+        _menuButton(t, subtasks: subtasks, allowFail: allowFail),
+      ],
+    );
+  }
+
   Widget _mainlineCard(Task t) {
     final subtasks = _subtasksByTask[t.id] ?? const <Subtask>[];
     final undone = subtasks.where((s) => !s.isDone).length;
+    final collapsed = _collapsedTasks.contains(t.id);
     return _cardShell(
       context,
       _kMainColor,
       Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(child: _taskTitle(t)),
-              _menuButton(t, subtasks: subtasks),
-            ],
+          _cardHeader(
+            t,
+            collapsed: collapsed,
+            onToggle: () => _toggleTask(t.id),
+            subtasks: subtasks,
           ),
-          const SizedBox(height: 8),
-          _rewardChips(t),
-          if (subtasks.isNotEmpty) ...[
-            const SizedBox(height: 10),
-            for (final s in subtasks)
-              Row(
-                children: [
-                  Checkbox(
-                    value: s.isDone,
-                    onChanged: s.isDone ? null : (_) => _completeSubtask(t, s),
-                  ),
-                  Expanded(
-                    child: Text(
-                      s.name,
-                      style: TextStyle(
-                        fontSize: 14,
-                        decoration: s.isDone
-                            ? TextDecoration.lineThrough
-                            : null,
-                        color: s.isDone ? Theme.of(context).hintColor : null,
+          if (collapsed)
+            _collapsedSummary(
+              subtasks.isEmpty
+                  ? (t.description.isEmpty ? '点右侧 ⋮ 可编辑或标记失败' : t.description)
+                  : '子项 ${subtasks.length - undone}/${subtasks.length} 已完成',
+            )
+          else ...[
+            if (t.description.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Text(t.description, style: Theme.of(context).textTheme.bodySmall),
+            ],
+            const SizedBox(height: 8),
+            _rewardChips(t),
+            if (subtasks.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              for (final s in subtasks)
+                Row(
+                  children: [
+                    Checkbox(
+                      value: s.isDone,
+                      onChanged:
+                          s.isDone ? null : (_) => _completeSubtask(t, s),
+                    ),
+                    Expanded(
+                      child: Text(
+                        s.name,
+                        style: TextStyle(
+                          fontSize: 14,
+                          decoration: s.isDone
+                              ? TextDecoration.lineThrough
+                              : null,
+                          color: s.isDone ? Theme.of(context).hintColor : null,
+                        ),
                       ),
                     ),
-                  ),
-                  IconButton(
-                    visualDensity: VisualDensity.compact,
-                    iconSize: 18,
-                    tooltip: '删除子项',
-                    icon: const Icon(Icons.close),
-                    onPressed: () async {
-                      await AppScope.read(context).service.deleteSubtask(s.id);
-                      await _load();
-                    },
-                  ),
-                ],
-              ),
-            _addSubtaskRow(t),
-          ],
-          const SizedBox(height: 8),
-          undone > 0
-              ? Padding(
-                  padding: const EdgeInsets.only(top: 2),
-                  child: Text(
-                    '完成剩余 $undone 个子项后自动完成',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                )
-              : FilledButton.icon(
-                  style: FilledButton.styleFrom(
-                    minimumSize: const Size.fromHeight(44),
-                  ),
-                  onPressed: () => _completeTask(t),
-                  icon: const Icon(Icons.flag_outlined),
-                  label: const Text('完成主线'),
+                    IconButton(
+                      visualDensity: VisualDensity.compact,
+                      iconSize: 18,
+                      tooltip: '删除子项',
+                      icon: const Icon(Icons.close),
+                      onPressed: () async {
+                        await AppScope.read(context).service.deleteSubtask(s.id);
+                        await _load();
+                      },
+                    ),
+                  ],
                 ),
+              _addSubtaskRow(t),
+            ],
+            const SizedBox(height: 8),
+            undone > 0
+                ? Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(
+                      '完成剩余 $undone 个子项后自动完成',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  )
+                : FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size.fromHeight(44),
+                    ),
+                    onPressed: () => _completeTask(t),
+                    icon: const Icon(Icons.flag_outlined),
+                    label: const Text('完成主线'),
+                  ),
+          ],
         ],
+      ),
+    );
+  }
+
+  /// 折叠态的摘要行（一行说明，卡片随即变得很矮）。
+  Widget _collapsedSummary(String text) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 4, right: 8),
+      child: Text(
+        text,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: Theme.of(context).textTheme.bodySmall,
       ),
     );
   }
@@ -557,32 +727,43 @@ class _TasksPageState extends State<TasksPage> {
   }
 
   Widget _sideCard(Task t) {
+    final collapsed = _collapsedTasks.contains(t.id);
     return _cardShell(
       context,
       _kSideColor,
       Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(child: _taskTitle(t)),
-              _menuButton(t),
+          _cardHeader(
+            t,
+            collapsed: collapsed,
+            onToggle: () => _toggleTask(t.id),
+          ),
+          if (collapsed)
+            _collapsedSummary(
+              t.description.isEmpty
+                  ? '点右侧 ⋮ 可编辑或标记失败'
+                  : t.description,
+            )
+          else ...[
+            if (t.description.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Text(t.description, style: Theme.of(context).textTheme.bodySmall),
             ],
-          ),
-          const SizedBox(height: 8),
-          _rewardChips(t),
-          const SizedBox(height: 10),
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton.tonal(
-              style: FilledButton.styleFrom(
-                minimumSize: const Size.fromHeight(44),
+            const SizedBox(height: 8),
+            _rewardChips(t),
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.tonal(
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size.fromHeight(44),
+                ),
+                onPressed: () => _completeTask(t),
+                child: const Text('完成'),
               ),
-              onPressed: () => _completeTask(t),
-              child: const Text('完成'),
             ),
-          ),
+          ],
         ],
       ),
     );

@@ -11,6 +11,7 @@ import 'package:babydaily/src/data/database.dart';
 import 'package:babydaily/src/domain/enums.dart';
 import 'package:babydaily/src/domain/game_service.dart';
 import 'package:babydaily/src/domain/streak.dart';
+import 'package:babydaily/src/domain/xp_economy.dart';
 import 'package:babydaily/src/ui/app_controller.dart';
 import 'package:babydaily/src/ui/clay.dart';
 import 'package:babydaily/src/ui/feedback.dart';
@@ -564,6 +565,7 @@ class _DailyTasksPageState extends State<DailyTasksPage> {
 
   Widget _rewardChips(Task t) {
     final chips = <Widget>[
+      TagPill(text: '经验 +$dailyTaskXp', color: _kDailyColor, icon: Icons.bolt),
       if (t.rewardHealth > 0)
         TagPill(
           text: '健康 +${t.rewardHealth}',
