@@ -38,6 +38,9 @@ class Tasks extends Table {
   /// 主线/支线：是否已完成（完成后进入"已完成"归档）。
   BoolColumn get isCompleted => boolean().withDefault(const Constant(false))();
   DateTimeColumn get completedAt => dateTime().nullable()();
+  /// 主线/支线：是否已失败（失败是终态，任务保留在"已失败"归档，只能删除）。
+  BoolColumn get isFailed => boolean().withDefault(const Constant(false))();
+  DateTimeColumn get failedAt => dateTime().nullable()();
   /// 每日任务：当天完成日期 'yyyy-MM-dd'，0 点结算时清空。
   TextColumn get completedOn => text().nullable()();
   IntColumn get sortOrder => integer().withDefault(const Constant(0))();
@@ -66,6 +69,25 @@ class TaskCompletions extends Table {
   IntColumn get disciplineGained => integer()();
   IntColumn get charmGained => integer()();
   DateTimeColumn get completedAt => dateTime()();
+}
+
+/// 每日任务历史：每天每个每日任务的结果（完成 / 失败），供按日期回溯（ADR-0007）。
+///
+/// 与 [TaskCompletions] 的分工：后者是所有类型任务的完成奖励流水，
+/// 这里是每日任务的逐日状态快照。任务被删除后记录仍保留（快照名称），
+/// 因此 taskId 可悬空、不用外键。
+class DailyTaskLogs extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  IntColumn get taskId => integer().nullable()();
+  TextColumn get taskName => text()();
+  TextColumn get date => text()(); // 'yyyy-MM-dd'
+  IntColumn get status => intEnum<DailyTaskStatus>()();
+  /// 当天该任务配置的惩罚值（实际扣除受属性下限 0 截断，见 ADR-0004）。
+  IntColumn get penaltyHealth => integer().withDefault(const Constant(0))();
+  IntColumn get penaltyDiscipline =>
+      integer().withDefault(const Constant(0))();
+  IntColumn get penaltyCharm => integer().withDefault(const Constant(0))();
+  DateTimeColumn get createdAt => dateTime()();
 }
 
 /// 习惯表：每日 / 每周 N 次。
@@ -135,6 +157,7 @@ class Settings extends Table {
   Tasks,
   Subtasks,
   TaskCompletions,
+  DailyTaskLogs,
   Habits,
   Checkins,
   HabitMilestones,
@@ -145,13 +168,18 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);
 
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
         onUpgrade: (m, from, to) async {
           if (from < 2) {
             await m.addColumn(habits, habits.ruleChangedAt);
+          }
+          if (from < 3) {
+            await m.addColumn(tasks, tasks.isFailed);
+            await m.addColumn(tasks, tasks.failedAt);
+            await m.createTable(dailyTaskLogs);
           }
         },
         beforeOpen: (details) async {

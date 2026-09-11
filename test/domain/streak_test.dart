@@ -4,7 +4,7 @@ import 'package:babydaily/src/domain/streak.dart';
 DateTime d(int y, int m, int day) => DateTime(y, m, day);
 
 void main() {
-  group('currentDailyStreak（每日习惯/笔记的当前连续天数）', () {
+  group('currentDailyStreak（每日习惯的当前连续天数）', () {
     test('今天已打卡：连续 3 天', () {
       final dates = {d(2026, 6, 1), d(2026, 6, 2), d(2026, 6, 3)};
       expect(currentDailyStreak(dates, d(2026, 6, 3)), 3);
@@ -28,13 +28,6 @@ void main() {
     test('未来日期的打卡不算入（数据防御）', () {
       final dates = {d(2026, 6, 5), d(2026, 6, 8)}; // 6/8 是未来
       expect(currentDailyStreak(dates, d(2026, 6, 5)), 1);
-    });
-  });
-
-  group('noteStreakDays（笔记连续天数，语义同每日习惯）', () {
-    test('今天写了 → 连续 2 天；断一天 → 0', () {
-      expect(noteStreakDays({d(2026, 6, 3), d(2026, 6, 4)}, d(2026, 6, 4)), 2);
-      expect(noteStreakDays({d(2026, 6, 3), d(2026, 6, 4)}, d(2026, 6, 6)), 0);
     });
   });
 

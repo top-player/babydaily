@@ -4,6 +4,12 @@ library;
 /// 任务类型：主线（长期目标，可拆子项）/ 支线（一次性）/ 每日任务（0 点重置）。
 enum TaskType { mainline, side, daily }
 
+/// 每日任务的单日结果：完成 / 失败。
+///
+/// 「未完成」不是记录状态而是派生状态：当天还没到 0 点结算、
+/// 也没有手动标记失败时，任务就是未完成。
+enum DailyTaskStatus { completed, failed }
+
 /// 习惯频率：每日 / 每周 N 次。
 enum HabitFrequency { daily, weekly }
 

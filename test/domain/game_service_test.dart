@@ -397,17 +397,20 @@ void main() {
   });
 
   group('每日结算', () {
-    test('0 点结算：未完成每日任务扣配置属性，完成的保留到重置', () async {
+    test('0 点结算：未完成每日任务扣配置属性并记为失败，完成的保留到重置', () async {
       await service.createCharacter(name: '小明', age: 18, gender: Gender.male);
+      final created = DateTime(2026, 6, 1, 8);
       final done = await service.createTask(
         name: '早起喝水',
         type: TaskType.daily,
         reward: const AttributeDelta(health: 0, discipline: 1, charm: 0),
+        now: created,
       );
       final missed = await service.createTask(
         name: '散步 10 分钟',
         type: TaskType.daily,
         reward: const AttributeDelta(health: 2, discipline: 0, charm: 0),
+        now: created,
       );
       await service.completeTask(done, now: DateTime(2026, 6, 5, 9));
 
@@ -419,8 +422,36 @@ void main() {
       expect(c.discipline, 51); // 完成的任务 +1，未被扣
       expect(c.xp, 0); // 经验从不被扣
 
+      // 未完成的任务记为失败：任务保留、历史留痕
+      expect(await service.dailyTasks(), hasLength(2));
+      final logs = await service.dailyLogsOn(DateTime(2026, 6, 5));
+      expect(logs, hasLength(2));
+      final failedLog = logs.singleWhere(
+        (l) => l.status == DailyTaskStatus.failed,
+      );
+      expect(failedLog.taskName, '散步 10 分钟');
+      expect(failedLog.penaltyHealth, 2);
+      expect(
+        logs.singleWhere((l) => l.status == DailyTaskStatus.completed).taskName,
+        '早起喝水',
+      );
+
       // 结算后每日任务可再次完成（新的一天）
       expect(await service.completeTask(missed, now: DateTime(2026, 6, 6, 9)), isNotNull);
+    });
+
+    test('结算不追溯昨天之后才创建的每日任务', () async {
+      await service.createCharacter(name: '小明', age: 18, gender: Gender.male);
+      await service.createTask(
+        name: '今天刚建的',
+        type: TaskType.daily,
+        reward: const AttributeDelta(health: 3, discipline: 0, charm: 0),
+        now: DateTime(2026, 6, 6, 8), // 结算当天才创建
+      );
+      final outcome = await service.settleDay(now: DateTime(2026, 6, 6, 9));
+      expect(outcome!.totalPenalty, AttributeDelta.zero);
+      expect((await service.character())!.health, 50);
+      expect(await service.dailyLogsOn(DateTime(2026, 6, 5)), isEmpty);
     });
 
     test('同一天重复结算只扣一次（幂等）', () async {
@@ -429,12 +460,14 @@ void main() {
         name: '散步 10 分钟',
         type: TaskType.daily,
         reward: const AttributeDelta(health: 2, discipline: 0, charm: 0),
+        now: DateTime(2026, 6, 1, 8),
       );
       final first = await service.settleDay(now: DateTime(2026, 6, 6, 0, 5));
       final second = await service.settleDay(now: DateTime(2026, 6, 6, 1, 5));
       expect(first, isNotNull);
       expect(second, isNull);
       expect((await service.character())!.health, 48);
+      expect(await service.dailyLogsOn(DateTime(2026, 6, 5)), hasLength(1));
     });
 
     test('属性已为 0 时结算停在下限，无负数债务', () async {
@@ -447,6 +480,7 @@ void main() {
         name: '散步 10 分钟',
         type: TaskType.daily,
         reward: const AttributeDelta(health: 5, discipline: 0, charm: 0),
+        now: DateTime(2026, 6, 1, 8),
       );
       final outcome = await service.settleDay(now: DateTime(2026, 6, 6, 0, 5));
       expect(outcome!.totalPenalty, const AttributeDelta(health: 1, discipline: 0, charm: 0));
@@ -459,95 +493,192 @@ void main() {
         name: '早起喝水',
         type: TaskType.daily,
         reward: const AttributeDelta(health: 0, discipline: 1, charm: 0),
+        now: DateTime(2026, 6, 1, 8),
       );
       await service.completeTask(done, now: DateTime(2026, 6, 5, 9));
       final outcome = await service.settleDay(now: DateTime(2026, 6, 6, 0, 5));
       expect(outcome!.totalPenalty, AttributeDelta.zero);
       expect((await service.character())!.discipline, 51);
     });
+
+    test('结算不重复扣当天已手动判失败的任务', () async {
+      await service.createCharacter(name: '小明', age: 18, gender: Gender.male);
+      final id = await service.createTask(
+        name: '散步 10 分钟',
+        type: TaskType.daily,
+        reward: const AttributeDelta(health: 2, discipline: 0, charm: 0),
+        now: DateTime(2026, 6, 1, 8),
+      );
+      await service.failTask(id, now: DateTime(2026, 6, 5, 20)); // 手动失败已扣 2
+      expect((await service.character())!.health, 48);
+
+      final outcome = await service.settleDay(now: DateTime(2026, 6, 6, 0, 5));
+      expect(outcome!.totalPenalty, AttributeDelta.zero);
+      expect((await service.character())!.health, 48);
+      expect(await service.dailyLogsOn(DateTime(2026, 6, 5)), hasLength(1));
+    });
   });
 
-  group('笔记与经验', () {
-    test('不足 20 字的笔记不给经验', () async {
+  group('手动判失败（不删除任务）', () {
+    test('每日任务：立即扣属性、记当天失败，当天不能再完成', () async {
       await service.createCharacter(name: '小明', age: 18, gender: Gender.male);
-      final result = await service.addNote('今天不错', now: DateTime(2026, 6, 5, 20));
-      expect(result.xpGained, 0);
-      expect(result.noteStreak, 0);
-      expect((await service.character())!.xp, 0);
+      final id = await service.createTask(
+        name: '散步 10 分钟',
+        type: TaskType.daily,
+        reward: const AttributeDelta(health: 2, discipline: 1, charm: 0),
+      );
+      final outcome = await service.failTask(id, now: DateTime(2026, 6, 5, 20));
+      expect(outcome, isNotNull);
+      expect(outcome!.penalty, const AttributeDelta(health: 2, discipline: 1, charm: 0));
+      expect(outcome.taskType, TaskType.daily);
+
+      final c = (await service.character())!;
+      expect(c.health, 48);
+      expect(c.discipline, 49);
+      expect(c.xp, 0);
+
+      // 任务保留，只是今天不能再完成；重复判失败无效
+      expect(await service.dailyTasks(), hasLength(1));
+      expect(await service.completeTask(id, now: DateTime(2026, 6, 5, 21)), isNull);
+      expect(await service.failTask(id, now: DateTime(2026, 6, 5, 22)), isNull);
+      expect((await service.character())!.health, 48);
+
+      final logs = await service.dailyLogsOn(DateTime(2026, 6, 5));
+      expect(logs, hasLength(1));
+      expect(logs.single.status, DailyTaskStatus.failed);
+      expect(logs.single.penaltyDiscipline, 1);
+
+      // 第二天照常可完成
+      expect(await service.completeTask(id, now: DateTime(2026, 6, 6, 9)), isNotNull);
     });
 
-    test('当天首篇 ≥20 字笔记 +10，且每天只发一次', () async {
+    test('每日任务：属性已为 0 时判失败不产生负数', () async {
       await service.createCharacter(name: '小明', age: 18, gender: Gender.male);
-      final long = '今天读完了第一章，感觉很有收获，继续加油。'; // >20 字
-      final first = await service.addNote(long, now: DateTime(2026, 6, 5, 20));
-      expect(first.xpGained, noteBaseXp);
-      expect(first.noteStreak, 1);
-
-      final second = await service.addNote(long, now: DateTime(2026, 6, 5, 21));
-      expect(second.xpGained, 0);
-      expect((await service.character())!.xp, 10);
+      await (db.update(db.characters)..where((c) => c.id.equals(1))).write(
+        const CharactersCompanion(health: Value(1)),
+      );
+      final id = await service.createTask(
+        name: '散步 10 分钟',
+        type: TaskType.daily,
+        reward: const AttributeDelta(health: 5, discipline: 0, charm: 0),
+      );
+      final outcome = await service.failTask(id, now: DateTime(2026, 6, 5, 20));
+      expect(outcome!.penalty, const AttributeDelta(health: 1, discipline: 0, charm: 0));
+      expect((await service.character())!.health, 0);
     });
 
-    test('连续写笔记：第 N 天 +10+min(N-1,5)，断档回到 10', () async {
+    test('每日任务：当天已完成不能判失败', () async {
+      await service.createCharacter(name: '小明', age: 18, gender: Gender.male);
+      final id = await service.createTask(
+        name: '早起喝水',
+        type: TaskType.daily,
+        reward: const AttributeDelta(health: 0, discipline: 1, charm: 0),
+      );
+      await service.completeTask(id, now: DateTime(2026, 6, 5, 9));
+      expect(await service.failTask(id, now: DateTime(2026, 6, 5, 20)), isNull);
+      expect((await service.character())!.discipline, 51);
+    });
+
+    test('主线/支线：进「已失败」归档，不发奖也不扣属性，且是终态', () async {
+      await service.createCharacter(name: '小明', age: 18, gender: Gender.male);
+      final mainline = await service.createTask(
+        name: '读完一本书',
+        type: TaskType.mainline,
+        reward: const AttributeDelta(health: 0, discipline: 2, charm: 0),
+      );
+      await service.createSubtask(taskId: mainline, name: '第一章');
+      final side = await service.createTask(
+        name: '整理书桌',
+        type: TaskType.side,
+        reward: const AttributeDelta(health: 1, discipline: 0, charm: 0),
+      );
+
+      final mainFail =
+          await service.failTask(mainline, now: DateTime(2026, 6, 5, 20));
+      final sideFail = await service.failTask(side, now: DateTime(2026, 6, 5, 20));
+      expect(mainFail!.penalty, AttributeDelta.zero);
+      expect(sideFail!.taskType, TaskType.side);
+
+      final c = (await service.character())!;
+      expect(c.xp, 0); // 失败不发经验
+      expect(c.health, 50); // 也不扣属性
+      expect(c.discipline, 50);
+
+      // 任务没被删除，只是离开进行中列表
+      expect(await service.tasksByType(TaskType.mainline), isEmpty);
+      expect(await service.tasksByType(TaskType.side), isEmpty);
+      expect(await service.tasksByType(TaskType.mainline, failed: true),
+          hasLength(1));
+      expect(await service.tasksByType(TaskType.side, failed: true), hasLength(1));
+      expect(await service.completionLog(), isEmpty);
+
+      // 终态：不能完成、不能重复判失败；子项也不再能勾选完成
+      expect(await service.completeTask(mainline, now: DateTime(2026, 6, 6, 9)), isNull);
+      expect(await service.failTask(side, now: DateTime(2026, 6, 6, 9)), isNull);
+      final sub = (await service.subtasksOf(mainline)).single;
+      expect(await service.completeSubtask(sub.id, now: DateTime(2026, 6, 6, 9)),
+          isNull);
+    });
+
+    test('已完成的任务不能再判失败', () async {
+      await service.createCharacter(name: '小明', age: 18, gender: Gender.male);
+      final id = await service.createTask(
+        name: '整理书桌',
+        type: TaskType.side,
+      );
+      await service.completeTask(id, now: DateTime(2026, 6, 5, 10));
+      expect(await service.failTask(id, now: DateTime(2026, 6, 5, 11)), isNull);
+      expect(await service.tasksByType(TaskType.side, completed: true),
+          hasLength(1));
+    });
+
+    test('每日任务历史：按日期分组、按日期倒序可查', () async {
+      await service.createCharacter(name: '小明', age: 18, gender: Gender.male);
+      final id = await service.createTask(
+        name: '早起喝水',
+        type: TaskType.daily,
+        reward: const AttributeDelta(health: 0, discipline: 1, charm: 0),
+        now: DateTime(2026, 6, 1, 8),
+      );
+      await service.completeTask(id, now: DateTime(2026, 6, 4, 9));
+      await service.failTask(id, now: DateTime(2026, 6, 5, 20));
+
+      final logs = await service.dailyLogs();
+      expect(logs, hasLength(2));
+      expect(logs.first.date, '2026-06-05'); // 倒序：最新在前
+      expect(logs.first.status, DailyTaskStatus.failed);
+      expect(logs.last.date, '2026-06-04');
+      expect(logs.last.status, DailyTaskStatus.completed);
+      expect(await service.dailyLogsOn(DateTime(2026, 6, 4)), hasLength(1));
+      expect(await service.dailyLogsOn(DateTime(2026, 6, 3)), isEmpty);
+    });
+  });
+
+  group('笔记（不发经验，ADR-0006）', () {
+    test('写任何长度的笔记都不发经验、不改属性', () async {
+      await service.createCharacter(name: '小明', age: 18, gender: Gender.male);
+      const long = '今天读完了第一章，感觉很有收获，继续加油。'; // >20 字
+      await service.addNote(long, now: DateTime(2026, 6, 5, 20));
+      await service.addNote('短笔记', now: DateTime(2026, 6, 5, 21));
+
+      final c = (await service.character())!;
+      expect(c.xp, 0);
+      expect(c.health, 50);
+      expect(c.discipline, 50);
+      expect(c.charm, 50);
+    });
+
+    test('连写多天、编辑与删除都不产生经验', () async {
       await service.createCharacter(name: '小明', age: 18, gender: Gender.male);
       const long = '今天读完了第一章，感觉很有收获，继续加油。';
-      await service.addNote(long, now: DateTime(2026, 6, 1, 20)); // 10
-      await service.addNote(long, now: DateTime(2026, 6, 2, 20)); // 11
-      await service.addNote(long, now: DateTime(2026, 6, 3, 20)); // 12
-      expect((await service.character())!.xp, 33);
-
-      // 断档一天
-      await service.addNote(long, now: DateTime(2026, 6, 5, 20)); // 回 10
-      expect((await service.character())!.xp, 43);
-      final r6 = await service.addNote(long, now: DateTime(2026, 6, 6, 20));
-      expect(r6.noteStreak, 2);
-      expect(r6.xpGained, 11);
-    });
-
-    test('连续加成封顶 +5（每天最多 15）', () async {
-      await service.createCharacter(name: '小明', age: 18, gender: Gender.male);
-      const long = '今天读完了第一章，感觉很有收获，继续加油。';
-      for (var i = 0; i < 6; i++) {
-        await service.addNote(long, now: DateTime(2026, 6, 1 + i, 20));
+      final id = await service.addNote(long, now: DateTime(2026, 6, 5, 20));
+      await service.updateNote(id, '$long 补充一句。');
+      await service.updateNote(id, '短');
+      await service.deleteNote(id);
+      for (var i = 0; i < 5; i++) {
+        await service.addNote(long, now: DateTime(2026, 6, 6 + i, 20));
       }
-      // 10+11+12+13+14+15 = 75
-      expect((await service.character())!.xp, 75);
-      final r7 = await service.addNote(long, now: DateTime(2026, 6, 7, 20));
-      expect(r7.xpGained, 15);
-      expect(r7.noteStreak, 7);
-    });
-
-    test('删除笔记不回追经验；短笔记改成合格笔记当天可补发', () async {
-      await service.createCharacter(name: '小明', age: 18, gender: Gender.male);
-      const long = '今天读完了第一章，感觉很有收获，继续加油。';
-      final noteId = await service.addNote(long, now: DateTime(2026, 6, 5, 20)).then((r) => r.noteId);
-      expect((await service.character())!.xp, 10);
-      await service.deleteNote(noteId);
-      expect((await service.character())!.xp, 10); // 不回追
-
-      // 新的一天：先写短笔记，再改长 → 当天补发
-      final shortId = await service.addNote('打卡', now: DateTime(2026, 6, 6, 9)).then((r) => r.noteId);
-      expect((await service.character())!.xp, 10);
-      await service.updateNote(shortId, long);
-      expect((await service.character())!.xp, 20);
-    });
-
-    test('编辑已合格的笔记不重复发放经验', () async {
-      await service.createCharacter(name: '小明', age: 18, gender: Gender.male);
-      const long = '今天读完了第一章，感觉很有收获，继续加油。';
-      final noteId = await service.addNote(long, now: DateTime(2026, 6, 5, 20)).then((r) => r.noteId);
-      expect((await service.character())!.xp, 10);
-
-      // 反复编辑同一篇合格笔记：不再发经验
-      await service.updateNote(noteId, '$long 补充一句。');
-      expect((await service.character())!.xp, 10);
-      await service.updateNote(noteId, '$long 再补充一句。');
-      expect((await service.character())!.xp, 10);
-
-      // 改成短笔记再改回长：仍不重复发（当天已发过一次）
-      await service.updateNote(noteId, '短');
-      await service.updateNote(noteId, long);
-      expect((await service.character())!.xp, 10);
+      expect((await service.character())!.xp, 0);
     });
   });
 
@@ -591,6 +722,17 @@ void main() {
       final daily = await service.createTask(
           name: '早起喝水', type: TaskType.daily);
       await service.completeTask(daily, now: DateTime(2026, 6, 3, 9));
+      // 一个失败的支线 + 一条每日任务失败历史
+      final failedSide =
+          await service.createTask(name: '写周报', type: TaskType.side);
+      await service.failTask(failedSide, now: DateTime(2026, 6, 3, 18));
+      await service.createTask(
+        name: '散步 10 分钟',
+        type: TaskType.daily,
+        reward: const AttributeDelta(health: 2, discipline: 0, charm: 0),
+        now: DateTime(2026, 6, 1, 8),
+      );
+      await service.settleDay(now: DateTime(2026, 6, 4, 0, 5)); // 6/3 未完成
       // 习惯打卡 3 天
       final habit = await service.createHabit(
           name: '早睡打卡', frequencyType: HabitFrequency.daily);
@@ -620,11 +762,15 @@ void main() {
       expect(c2.charm, c1.charm);
 
       final tasks2 = await service2.dailyTasks();
-      expect(tasks2, hasLength(1));
+      expect(tasks2, hasLength(2)); // 早起喝水 + 散步 10 分钟
       expect(await service2.tasksByType(TaskType.mainline, completed: false),
           hasLength(1));
       expect(await service2.tasksByType(TaskType.side, completed: true),
           hasLength(1));
+      final failed2 = await service2.tasksByType(TaskType.side, failed: true);
+      expect(failed2, hasLength(1));
+      expect(failed2.single.name, '写周报');
+      expect(failed2.single.failedAt, isNotNull);
 
       // 新库 id 重排，用主线任务行取 id
       final mainline2 =
@@ -639,6 +785,15 @@ void main() {
       final sideLog = log2.singleWhere((l) => l.taskType == TaskType.side);
       expect(sideLog.xpGained, sideQuestXp);
       expect(sideLog.healthGained, 1);
+
+      // 每日任务历史（完成 + 结算判失败）一并恢复
+      final dailyLogs2 = await service2.dailyLogs();
+      expect(dailyLogs2, hasLength(2));
+      expect(
+        dailyLogs2.where((l) => l.status == DailyTaskStatus.failed).single.taskName,
+        '散步 10 分钟',
+      );
+      expect(await service2.dailyLogsOn(DateTime(2026, 6, 3)), hasLength(2));
 
       final habit2 = (await service2.habits()).single;
       expect(await service2.checkinDatesOf(habit2.id), hasLength(3));

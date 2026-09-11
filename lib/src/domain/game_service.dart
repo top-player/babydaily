@@ -1,7 +1,7 @@
 /// 游戏用例：主角、任务、习惯、笔记与每日结算的统一入口。
 ///
 /// 所有写操作都通过 drift 事务保证一致；规则常量与纯计算
-/// 分别位于 xp_economy / streak / milestone / note_xp / settlement / attributes。
+/// 分别位于 xp_economy / streak / milestone / settlement / attributes。
 library;
 
 import 'dart:convert';
@@ -11,7 +11,6 @@ import 'package:babydaily/src/data/database.dart';
 import 'package:babydaily/src/domain/attributes.dart';
 import 'package:babydaily/src/domain/enums.dart';
 import 'package:babydaily/src/domain/milestone.dart';
-import 'package:babydaily/src/domain/note_xp.dart';
 import 'package:babydaily/src/domain/settlement.dart';
 import 'package:babydaily/src/domain/streak.dart';
 import 'package:babydaily/src/domain/xp_economy.dart';
@@ -97,17 +96,20 @@ class SettlementResult {
   final List<String> penalizedTaskNames;
 }
 
-/// 一次写笔记的结果。
-class NoteResult {
-  const NoteResult({
-    required this.noteId,
-    required this.xpGained,
-    required this.noteStreak,
+/// 一次任务失败的结果。
+class TaskFailOutcome {
+  const TaskFailOutcome({
+    required this.taskName,
+    required this.taskType,
+    required this.penalty,
   });
 
-  final int noteId;
-  final int xpGained;
-  final int noteStreak;
+  final String taskName;
+  final TaskType taskType;
+
+  /// 实际扣除的属性：每日任务判失败时立即扣除（下限 0 截断后的真实值）；
+  /// 主线/支线失败不涉及属性，恒为 [AttributeDelta.zero]。
+  final AttributeDelta penalty;
 }
 
 /// 习惯展示状态（连续/累计/今日/打卡日期）。
@@ -243,6 +245,8 @@ class GameService {
             'reward_charm': t.rewardCharm,
             'is_completed': t.isCompleted,
             'completed_at': iso(t.completedAt),
+            'is_failed': t.isFailed,
+            'failed_at': iso(t.failedAt),
             'completed_on': t.completedOn,
             'sort_order': t.sortOrder,
             'created_at': iso(t.createdAt),
@@ -271,6 +275,18 @@ class GameService {
             'discipline_gained': c.disciplineGained,
             'charm_gained': c.charmGained,
             'completed_at': iso(c.completedAt),
+          }
+      ],
+      'daily_task_logs': [
+        for (final l in await db.select(db.dailyTaskLogs).get())
+          {
+            'task_name': l.taskName,
+            'date': l.date,
+            'status': l.status.name,
+            'penalty_health': l.penaltyHealth,
+            'penalty_discipline': l.penaltyDiscipline,
+            'penalty_charm': l.penaltyCharm,
+            'created_at': iso(l.createdAt),
           }
       ],
       'habits': [
@@ -329,6 +345,8 @@ class GameService {
   /// 从 JSON 导入：清空当前数据后恢复备份内容（事务保证原子性）。
   ///
   /// 关联通过名称还原（任务名/习惯名），导入后当天不再触发每日结算。
+  /// 版本 1 的快照按增量字段读取：旧备份没有失败/每日历史的键时按默认值恢复，
+  /// 因此新旧备份都能导入。
   Future<void> importJson(String json, {required DateTime now}) async {
     final data = jsonDecode(json) as Map<String, dynamic>;
     if (data['version'] != 1) {
@@ -340,6 +358,7 @@ class GameService {
       await db.delete(db.checkins).go();
       await db.delete(db.habitMilestones).go();
       await db.delete(db.taskCompletions).go();
+      await db.delete(db.dailyTaskLogs).go();
       await db.delete(db.tasks).go();
       await db.delete(db.habits).go();
       await db.delete(db.notes).go();
@@ -377,6 +396,8 @@ class GameService {
               rewardCharm: Value(t['reward_charm'] as int),
               isCompleted: Value(t['is_completed'] as bool),
               completedAt: Value(parseIso(t['completed_at'])),
+              isFailed: Value(t['is_failed'] as bool? ?? false),
+              failedAt: Value(parseIso(t['failed_at'])),
               completedOn: Value(t['completed_on'] as String?),
               sortOrder: Value(t['sort_order'] as int),
               createdAt: parseIso(t['created_at']) ?? now,
@@ -407,6 +428,20 @@ class GameService {
               disciplineGained: c['discipline_gained'] as int,
               charmGained: c['charm_gained'] as int,
               completedAt: parseIso(c['completed_at']) ?? now,
+            ));
+      }
+
+      for (final l in ((data['daily_task_logs'] as List?) ?? const [])
+          .cast<Map<String, dynamic>>()) {
+        await db.into(db.dailyTaskLogs).insert(DailyTaskLogsCompanion.insert(
+              taskId: Value(taskNameToId[l['task_name']]),
+              taskName: l['task_name'] as String,
+              date: l['date'] as String,
+              status: DailyTaskStatus.values.byName(l['status'] as String),
+              penaltyHealth: Value(l['penalty_health'] as int? ?? 0),
+              penaltyDiscipline: Value(l['penalty_discipline'] as int? ?? 0),
+              penaltyCharm: Value(l['penalty_charm'] as int? ?? 0),
+              createdAt: parseIso(l['created_at']) ?? now,
             ));
       }
 
@@ -496,12 +531,12 @@ class GameService {
         ));
   }
 
-  /// 完成任务：按类型发放固定经验与配置属性；重复完成返回 null。
+  /// 完成任务：按类型发放固定经验与配置属性；重复完成或已判失败返回 null。
   Future<GrowthOutcome?> completeTask(int taskId, {required DateTime now}) {
     return db.transaction(() async {
       final task = await (db.select(db.tasks)..where((t) => t.id.equals(taskId)))
           .getSingleOrNull();
-      if (task == null) return null;
+      if (task == null || task.isFailed) return null;
 
       final reward = AttributeDelta(
         health: task.rewardHealth,
@@ -512,10 +547,23 @@ class GameService {
       int xpGain;
       switch (task.type) {
         case TaskType.daily:
-          if (task.completedOn == dateString(now)) return null;
+          final today = dateString(now);
+          if (task.completedOn == today) return null;
+          // 今天已被判失败：当天不能再完成（不能既扣属性又拿奖励）
+          final loggedToday = await (db.select(db.dailyTaskLogs)
+                ..where((l) => l.taskId.equals(taskId) & l.date.equals(today)))
+              .getSingleOrNull();
+          if (loggedToday != null) return null;
           xpGain = dailyTaskXp;
           await (db.update(db.tasks)..where((t) => t.id.equals(taskId))).write(
-            TasksCompanion(completedOn: Value(dateString(now))),
+            TasksCompanion(completedOn: Value(today)),
+          );
+          // 逐日历史：完成也要落一条，历史页才能按日期回溯
+          await _insertDailyLog(
+            task: task,
+            date: today,
+            status: DailyTaskStatus.completed,
+            now: now,
           );
         case TaskType.mainline:
           if (task.isCompleted) return null;
@@ -547,6 +595,111 @@ class GameService {
           ));
       return outcome;
     });
+  }
+
+  /// 手动把任务判为失败（失败后不删除；主线/支线失败是终态，只能删除）。
+  ///
+  /// 详见 ADR-0007：
+  /// - 每日任务：立即按配置扣除属性并落当天的失败记录；当天已完成则返回 null。
+  /// - 主线/支线：标记为失败后离开进行中列表，进入「已失败」归档，不发奖也不扣属性。
+  ///
+  /// 重复判失败返回 null。
+  Future<TaskFailOutcome?> failTask(int taskId, {required DateTime now}) {
+    return db.transaction(() async {
+      final task = await (db.select(db.tasks)..where((t) => t.id.equals(taskId)))
+          .getSingleOrNull();
+      if (task == null) return null;
+
+      if (task.type != TaskType.daily) {
+        if (task.isCompleted || task.isFailed) return null;
+        await (db.update(db.tasks)..where((t) => t.id.equals(taskId))).write(
+          TasksCompanion(
+            isFailed: const Value(true),
+            failedAt: Value(now),
+          ),
+        );
+        return TaskFailOutcome(
+          taskName: task.name,
+          taskType: task.type,
+          penalty: AttributeDelta.zero,
+        );
+      }
+
+      final today = dateString(now);
+      if (task.completedOn == today) return null; // 今天已完成，不能判失败
+      final logged = await (db.select(db.dailyTaskLogs)
+            ..where((l) => l.taskId.equals(taskId) & l.date.equals(today)))
+          .getSingleOrNull();
+      if (logged != null) return null; // 今天已有结论（完成/失败）
+
+      final applied = await _applyPenalty(
+        AttributeDelta(
+          health: task.rewardHealth,
+          discipline: task.rewardDiscipline,
+          charm: task.rewardCharm,
+        ),
+        now: now,
+      );
+      await _insertDailyLog(
+        task: task,
+        date: today,
+        status: DailyTaskStatus.failed,
+        now: now,
+      );
+      return TaskFailOutcome(
+        taskName: task.name,
+        taskType: task.type,
+        penalty: applied,
+      );
+    });
+  }
+
+  /// 落一条每日任务历史（配置惩罚值随快照保存，任务删除后仍可回溯）。
+  Future<void> _insertDailyLog({
+    required Task task,
+    required String date,
+    required DailyTaskStatus status,
+    required DateTime now,
+  }) async {
+    await db.into(db.dailyTaskLogs).insert(DailyTaskLogsCompanion.insert(
+          taskId: Value(task.id),
+          taskName: task.name,
+          date: date,
+          status: status,
+          penaltyHealth: Value(task.rewardHealth),
+          penaltyDiscipline: Value(task.rewardDiscipline),
+          penaltyCharm: Value(task.rewardCharm),
+          createdAt: now,
+        ));
+  }
+
+  /// 立即扣除属性，返回实际生效的扣除量（下限 0 截断）。
+  Future<AttributeDelta> _applyPenalty(
+    AttributeDelta penalty, {
+    required DateTime now,
+  }) async {
+    final row = await (db.select(db.characters)..where((c) => c.id.equals(1)))
+        .getSingleOrNull();
+    if (row == null) return AttributeDelta.zero;
+    final current = Attributes(
+      health: row.health,
+      discipline: row.discipline,
+      charm: row.charm,
+    );
+    final after = current.applyPenalty(penalty);
+    await (db.update(db.characters)..where((c) => c.id.equals(1))).write(
+      CharactersCompanion(
+        health: Value(after.health),
+        discipline: Value(after.discipline),
+        charm: Value(after.charm),
+        updatedAt: Value(now),
+      ),
+    );
+    return AttributeDelta(
+      health: current.health - after.health,
+      discipline: current.discipline - after.discipline,
+      charm: current.charm - after.charm,
+    );
   }
 
   Future<void> _markTaskCompleted(int taskId, DateTime now) async {
@@ -587,7 +740,10 @@ class GameService {
       final task = await (db.select(db.tasks)
             ..where((t) => t.id.equals(sub.taskId)))
           .getSingleOrNull();
-      if (task == null || task.isCompleted || task.type != TaskType.mainline) {
+      if (task == null ||
+          task.isCompleted ||
+          task.isFailed ||
+          task.type != TaskType.mainline) {
         return null;
       }
 
@@ -644,11 +800,19 @@ class GameService {
     return query.get();
   }
 
-  /// 某类型的任务（主线/支线按是否已完成过滤；每日任务用 dailyTasks）。
-  Future<List<Task>> tasksByType(TaskType type, {required bool completed}) async {
+  /// 某类型的任务，按状态过滤：进行中（默认）/ 已完成 / 已失败。
+  ///
+  /// [completed] 与 [failed] 互斥，同时为 true 不会有结果。
+  Future<List<Task>> tasksByType(
+    TaskType type, {
+    bool completed = false,
+    bool failed = false,
+  }) async {
     final query = db.select(db.tasks)
       ..where((t) =>
-          t.type.equalsValue(type) & t.isCompleted.equals(completed))
+          t.type.equalsValue(type) &
+          t.isCompleted.equals(completed) &
+          t.isFailed.equals(failed))
       ..orderBy([
         (t) => OrderingTerm.asc(t.sortOrder),
         (t) => OrderingTerm.asc(t.id),
@@ -664,6 +828,24 @@ class GameService {
         (t) => OrderingTerm.asc(t.sortOrder),
         (t) => OrderingTerm.asc(t.id),
       ]);
+    return query.get();
+  }
+
+  /// 全部每日任务历史（日期倒序，同日按记录顺序），供按天回溯。
+  Future<List<DailyTaskLog>> dailyLogs() async {
+    final query = db.select(db.dailyTaskLogs)
+      ..orderBy([
+        (l) => OrderingTerm.desc(l.date),
+        (l) => OrderingTerm.asc(l.id),
+      ]);
+    return query.get();
+  }
+
+  /// 某一天的每日任务历史。
+  Future<List<DailyTaskLog>> dailyLogsOn(DateTime day) async {
+    final query = db.select(db.dailyTaskLogs)
+      ..where((l) => l.date.equals(dateString(day)))
+      ..orderBy([(l) => OrderingTerm.asc(l.id)]);
     return query.get();
   }
 
@@ -908,9 +1090,10 @@ class GameService {
 
   // ---- 每日结算 ----
 
-  /// 0 点结算（ADR-0004）：结算 [now] 的前一天。
+  /// 0 点结算（ADR-0004 / ADR-0007）：结算 [now] 的前一天。
   ///
-  /// 前一天未完成的每日任务扣除其配置属性（下限 0、不扣经验）；
+  /// 前一天未完成的每日任务扣除其配置属性（下限 0、不扣经验），
+  /// 并把前一天记为失败写进每日任务历史（任务本身保留，只重置当天状态）；
   /// 全部每日任务重置为未完成。同一天重复调用返回 null（幂等）。
   Future<SettlementResult?> settleDay({required DateTime now}) {
     return db.transaction(() async {
@@ -921,19 +1104,41 @@ class GameService {
       if (last?.value == today) return null;
 
       final yesterday = dateString(now.subtract(const Duration(days: 1)));
+      final dayStart = DateTime(now.year, now.month, now.day); // 昨天 24:00
+      final loggedYesterday = await (db.select(db.dailyTaskLogs)
+            ..where((l) => l.date.equals(yesterday)))
+          .get();
+      final alreadyFailed = {
+        for (final l in loggedYesterday)
+          if (l.status == DailyTaskStatus.failed) l.taskId,
+      };
       final dailyTasks = await (db.select(db.tasks)
             ..where((t) => t.type.equalsValue(TaskType.daily)))
           .get();
+      // 未完成 = 昨天没完成、昨天已经存在（不追溯昨天之后才建的任务）、
+      // 且没有在昨天被手动判失败（手动判失败时已扣过，不重复扣）
       final missed = [
         for (final t in dailyTasks)
-          if (t.completedOn != yesterday) t,
+          if (t.completedOn != yesterday &&
+              !t.createdAt.isAfter(dayStart) &&
+              !alreadyFailed.contains(t.id))
+            t,
       ];
 
       final row = await (db.select(db.characters)
             ..where((c) => c.id.equals(1)))
           .getSingleOrNull();
       if (row == null) {
-        // 尚无主角：只记录结算标记，不处理
+        // 尚无主角：只记录结算标记与失败历史，不扣属性
+        for (final t in missed) {
+          await _insertDailyLog(
+            task: t,
+            date: yesterday,
+            status: DailyTaskStatus.failed,
+            now: now,
+          );
+        }
+        await _resetDailyTasks(dailyTasks);
         await db.into(db.settings).insertOnConflictUpdate(
             SettingsCompanion.insert(key: 'last_settled_on', value: today));
         return SettlementResult(
@@ -962,14 +1167,17 @@ class GameService {
         ),
       );
 
-      // 全部每日任务重置为未完成
-      for (final t in dailyTasks) {
-        if (t.completedOn != null) {
-          await (db.update(db.tasks)..where((x) => x.id.equals(t.id))).write(
-            const TasksCompanion(completedOn: Value(null)),
-          );
-        }
+      // 昨天未完成的每日任务记为失败（不删除任务）
+      for (final t in missed) {
+        await _insertDailyLog(
+          task: t,
+          date: yesterday,
+          status: DailyTaskStatus.failed,
+          now: now,
+        );
       }
+
+      await _resetDailyTasks(dailyTasks);
 
       await db.into(db.settings).insertOnConflictUpdate(
           SettingsCompanion.insert(key: 'last_settled_on', value: today));
@@ -981,84 +1189,43 @@ class GameService {
     });
   }
 
+  /// 结算后把每日任务重置为未完成（任务与历史都保留）。
+  Future<void> _resetDailyTasks(List<Task> dailyTasks) async {
+    for (final t in dailyTasks) {
+      if (t.completedOn != null) {
+        await (db.update(db.tasks)..where((x) => x.id.equals(t.id))).write(
+          const TasksCompanion(completedOn: Value(null)),
+        );
+      }
+    }
+  }
+
   // ---- 笔记 ----
 
-  Future<NoteResult> addNote(String content, {required DateTime now}) async {
-    final id = await db.into(db.notes).insert(NotesCompanion.insert(
+  /// 新增笔记，返回笔记 id。
+  ///
+  /// 笔记只做记录：不发经验、不参与成长结算（ADR-0006）。
+  Future<int> addNote(String content, {required DateTime now}) async {
+    return db.into(db.notes).insert(NotesCompanion.insert(
           content: content,
           createdAt: now,
           updatedAt: now,
         ));
-    return _grantNoteXpIfQualified(
-      qualifying: content.trim().length >= 20,
-      now: now,
-      noteId: id,
-    );
   }
 
-  Future<NoteResult> updateNote(int noteId, String content) async {
-    final note = await (db.select(db.notes)..where((n) => n.id.equals(noteId)))
-        .getSingleOrNull();
-    if (note == null) {
-      return NoteResult(noteId: noteId, xpGained: 0, noteStreak: 0);
-    }
-    final updatedAt = DateTime.now();
+  /// 编辑笔记内容（同样不发经验）。
+  Future<void> updateNote(int noteId, String content) async {
     await (db.update(db.notes)..where((n) => n.id.equals(noteId))).write(
       NotesCompanion(
         content: Value(content),
-        updatedAt: Value(updatedAt),
+        updatedAt: Value(DateTime.now()),
       ),
     );
-    return _grantNoteXpIfQualified(
-      qualifying: content.trim().length >= 20,
-      // 经验归属笔记的创建日，而不是编辑日
-      now: note.createdAt,
-      noteId: noteId,
-    );
   }
 
-  /// 删除笔记：不回追已发放的经验（ADR-0003）。
+  /// 删除笔记（笔记无经验与奖励，删除不影响任何数值）。
   Future<void> deleteNote(int noteId) async {
     await (db.delete(db.notes)..where((n) => n.id.equals(noteId))).go();
-  }
-
-  /// 当天首篇合格（≥20 字）笔记发放经验：10 + min(连续天数-1, 5)。
-  ///
-  /// 每天只发一次：以设置项 note_xp_granted_on 记录已发放日期，
-  /// 避免删除/改写笔记反复刷经验。
-  Future<NoteResult> _grantNoteXpIfQualified({
-    required bool qualifying,
-    required DateTime now,
-    required int noteId,
-  }) async {
-    final char = await character();
-    if (!qualifying || char == null) {
-      return NoteResult(noteId: noteId, xpGained: 0, noteStreak: 0);
-    }
-
-    final allNotes = await db.select(db.notes).get();
-    final qualifyingDays = <DateTime>{
-      for (final n in allNotes)
-        if (n.content.trim().length >= 20) dateOnly(n.createdAt),
-    };
-    final streak = noteStreakDays(qualifyingDays, now);
-
-    final grantedOn = await (db.select(db.settings)
-          ..where((s) => s.key.equals('note_xp_granted_on')))
-        .getSingleOrNull();
-    if (grantedOn?.value == dateString(now)) {
-      return NoteResult(noteId: noteId, xpGained: 0, noteStreak: streak);
-    }
-
-    final growth =
-        await _grant(xp: noteXpForStreak(streak), attrs: AttributeDelta.zero);
-    await db.into(db.settings).insertOnConflictUpdate(SettingsCompanion.insert(
-        key: 'note_xp_granted_on', value: dateString(now)));
-    return NoteResult(
-      noteId: noteId,
-      xpGained: growth.xpGained,
-      noteStreak: streak,
-    );
   }
 
   /// 某天的全部笔记（按创建时间升序）。

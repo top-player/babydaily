@@ -686,6 +686,32 @@ class $TasksTable extends Tasks with TableInfo<$TasksTable, Task> {
     type: DriftSqlType.dateTime,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _isFailedMeta = const VerificationMeta(
+    'isFailed',
+  );
+  @override
+  late final GeneratedColumn<bool> isFailed = GeneratedColumn<bool>(
+    'is_failed',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("is_failed" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _failedAtMeta = const VerificationMeta(
+    'failedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> failedAt = GeneratedColumn<DateTime>(
+    'failed_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _completedOnMeta = const VerificationMeta(
     'completedOn',
   );
@@ -731,6 +757,8 @@ class $TasksTable extends Tasks with TableInfo<$TasksTable, Task> {
     rewardCharm,
     isCompleted,
     completedAt,
+    isFailed,
+    failedAt,
     completedOn,
     sortOrder,
     createdAt,
@@ -812,6 +840,18 @@ class $TasksTable extends Tasks with TableInfo<$TasksTable, Task> {
         ),
       );
     }
+    if (data.containsKey('is_failed')) {
+      context.handle(
+        _isFailedMeta,
+        isFailed.isAcceptableOrUnknown(data['is_failed']!, _isFailedMeta),
+      );
+    }
+    if (data.containsKey('failed_at')) {
+      context.handle(
+        _failedAtMeta,
+        failedAt.isAcceptableOrUnknown(data['failed_at']!, _failedAtMeta),
+      );
+    }
     if (data.containsKey('completed_on')) {
       context.handle(
         _completedOnMeta,
@@ -882,6 +922,14 @@ class $TasksTable extends Tasks with TableInfo<$TasksTable, Task> {
         DriftSqlType.dateTime,
         data['${effectivePrefix}completed_at'],
       ),
+      isFailed: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}is_failed'],
+      )!,
+      failedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}failed_at'],
+      ),
       completedOn: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}completed_on'],
@@ -919,6 +967,10 @@ class Task extends DataClass implements Insertable<Task> {
   final bool isCompleted;
   final DateTime? completedAt;
 
+  /// 主线/支线：是否已失败（失败是终态，任务保留在"已失败"归档，只能删除）。
+  final bool isFailed;
+  final DateTime? failedAt;
+
   /// 每日任务：当天完成日期 'yyyy-MM-dd'，0 点结算时清空。
   final String? completedOn;
   final int sortOrder;
@@ -933,6 +985,8 @@ class Task extends DataClass implements Insertable<Task> {
     required this.rewardCharm,
     required this.isCompleted,
     this.completedAt,
+    required this.isFailed,
+    this.failedAt,
     this.completedOn,
     required this.sortOrder,
     required this.createdAt,
@@ -952,6 +1006,10 @@ class Task extends DataClass implements Insertable<Task> {
     map['is_completed'] = Variable<bool>(isCompleted);
     if (!nullToAbsent || completedAt != null) {
       map['completed_at'] = Variable<DateTime>(completedAt);
+    }
+    map['is_failed'] = Variable<bool>(isFailed);
+    if (!nullToAbsent || failedAt != null) {
+      map['failed_at'] = Variable<DateTime>(failedAt);
     }
     if (!nullToAbsent || completedOn != null) {
       map['completed_on'] = Variable<String>(completedOn);
@@ -974,6 +1032,10 @@ class Task extends DataClass implements Insertable<Task> {
       completedAt: completedAt == null && nullToAbsent
           ? const Value.absent()
           : Value(completedAt),
+      isFailed: Value(isFailed),
+      failedAt: failedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(failedAt),
       completedOn: completedOn == null && nullToAbsent
           ? const Value.absent()
           : Value(completedOn),
@@ -999,6 +1061,8 @@ class Task extends DataClass implements Insertable<Task> {
       rewardCharm: serializer.fromJson<int>(json['rewardCharm']),
       isCompleted: serializer.fromJson<bool>(json['isCompleted']),
       completedAt: serializer.fromJson<DateTime?>(json['completedAt']),
+      isFailed: serializer.fromJson<bool>(json['isFailed']),
+      failedAt: serializer.fromJson<DateTime?>(json['failedAt']),
       completedOn: serializer.fromJson<String?>(json['completedOn']),
       sortOrder: serializer.fromJson<int>(json['sortOrder']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
@@ -1017,6 +1081,8 @@ class Task extends DataClass implements Insertable<Task> {
       'rewardCharm': serializer.toJson<int>(rewardCharm),
       'isCompleted': serializer.toJson<bool>(isCompleted),
       'completedAt': serializer.toJson<DateTime?>(completedAt),
+      'isFailed': serializer.toJson<bool>(isFailed),
+      'failedAt': serializer.toJson<DateTime?>(failedAt),
       'completedOn': serializer.toJson<String?>(completedOn),
       'sortOrder': serializer.toJson<int>(sortOrder),
       'createdAt': serializer.toJson<DateTime>(createdAt),
@@ -1033,6 +1099,8 @@ class Task extends DataClass implements Insertable<Task> {
     int? rewardCharm,
     bool? isCompleted,
     Value<DateTime?> completedAt = const Value.absent(),
+    bool? isFailed,
+    Value<DateTime?> failedAt = const Value.absent(),
     Value<String?> completedOn = const Value.absent(),
     int? sortOrder,
     DateTime? createdAt,
@@ -1046,6 +1114,8 @@ class Task extends DataClass implements Insertable<Task> {
     rewardCharm: rewardCharm ?? this.rewardCharm,
     isCompleted: isCompleted ?? this.isCompleted,
     completedAt: completedAt.present ? completedAt.value : this.completedAt,
+    isFailed: isFailed ?? this.isFailed,
+    failedAt: failedAt.present ? failedAt.value : this.failedAt,
     completedOn: completedOn.present ? completedOn.value : this.completedOn,
     sortOrder: sortOrder ?? this.sortOrder,
     createdAt: createdAt ?? this.createdAt,
@@ -1073,6 +1143,8 @@ class Task extends DataClass implements Insertable<Task> {
       completedAt: data.completedAt.present
           ? data.completedAt.value
           : this.completedAt,
+      isFailed: data.isFailed.present ? data.isFailed.value : this.isFailed,
+      failedAt: data.failedAt.present ? data.failedAt.value : this.failedAt,
       completedOn: data.completedOn.present
           ? data.completedOn.value
           : this.completedOn,
@@ -1093,6 +1165,8 @@ class Task extends DataClass implements Insertable<Task> {
           ..write('rewardCharm: $rewardCharm, ')
           ..write('isCompleted: $isCompleted, ')
           ..write('completedAt: $completedAt, ')
+          ..write('isFailed: $isFailed, ')
+          ..write('failedAt: $failedAt, ')
           ..write('completedOn: $completedOn, ')
           ..write('sortOrder: $sortOrder, ')
           ..write('createdAt: $createdAt')
@@ -1111,6 +1185,8 @@ class Task extends DataClass implements Insertable<Task> {
     rewardCharm,
     isCompleted,
     completedAt,
+    isFailed,
+    failedAt,
     completedOn,
     sortOrder,
     createdAt,
@@ -1128,6 +1204,8 @@ class Task extends DataClass implements Insertable<Task> {
           other.rewardCharm == this.rewardCharm &&
           other.isCompleted == this.isCompleted &&
           other.completedAt == this.completedAt &&
+          other.isFailed == this.isFailed &&
+          other.failedAt == this.failedAt &&
           other.completedOn == this.completedOn &&
           other.sortOrder == this.sortOrder &&
           other.createdAt == this.createdAt);
@@ -1143,6 +1221,8 @@ class TasksCompanion extends UpdateCompanion<Task> {
   final Value<int> rewardCharm;
   final Value<bool> isCompleted;
   final Value<DateTime?> completedAt;
+  final Value<bool> isFailed;
+  final Value<DateTime?> failedAt;
   final Value<String?> completedOn;
   final Value<int> sortOrder;
   final Value<DateTime> createdAt;
@@ -1156,6 +1236,8 @@ class TasksCompanion extends UpdateCompanion<Task> {
     this.rewardCharm = const Value.absent(),
     this.isCompleted = const Value.absent(),
     this.completedAt = const Value.absent(),
+    this.isFailed = const Value.absent(),
+    this.failedAt = const Value.absent(),
     this.completedOn = const Value.absent(),
     this.sortOrder = const Value.absent(),
     this.createdAt = const Value.absent(),
@@ -1170,6 +1252,8 @@ class TasksCompanion extends UpdateCompanion<Task> {
     this.rewardCharm = const Value.absent(),
     this.isCompleted = const Value.absent(),
     this.completedAt = const Value.absent(),
+    this.isFailed = const Value.absent(),
+    this.failedAt = const Value.absent(),
     this.completedOn = const Value.absent(),
     this.sortOrder = const Value.absent(),
     required DateTime createdAt,
@@ -1186,6 +1270,8 @@ class TasksCompanion extends UpdateCompanion<Task> {
     Expression<int>? rewardCharm,
     Expression<bool>? isCompleted,
     Expression<DateTime>? completedAt,
+    Expression<bool>? isFailed,
+    Expression<DateTime>? failedAt,
     Expression<String>? completedOn,
     Expression<int>? sortOrder,
     Expression<DateTime>? createdAt,
@@ -1200,6 +1286,8 @@ class TasksCompanion extends UpdateCompanion<Task> {
       if (rewardCharm != null) 'reward_charm': rewardCharm,
       if (isCompleted != null) 'is_completed': isCompleted,
       if (completedAt != null) 'completed_at': completedAt,
+      if (isFailed != null) 'is_failed': isFailed,
+      if (failedAt != null) 'failed_at': failedAt,
       if (completedOn != null) 'completed_on': completedOn,
       if (sortOrder != null) 'sort_order': sortOrder,
       if (createdAt != null) 'created_at': createdAt,
@@ -1216,6 +1304,8 @@ class TasksCompanion extends UpdateCompanion<Task> {
     Value<int>? rewardCharm,
     Value<bool>? isCompleted,
     Value<DateTime?>? completedAt,
+    Value<bool>? isFailed,
+    Value<DateTime?>? failedAt,
     Value<String?>? completedOn,
     Value<int>? sortOrder,
     Value<DateTime>? createdAt,
@@ -1230,6 +1320,8 @@ class TasksCompanion extends UpdateCompanion<Task> {
       rewardCharm: rewardCharm ?? this.rewardCharm,
       isCompleted: isCompleted ?? this.isCompleted,
       completedAt: completedAt ?? this.completedAt,
+      isFailed: isFailed ?? this.isFailed,
+      failedAt: failedAt ?? this.failedAt,
       completedOn: completedOn ?? this.completedOn,
       sortOrder: sortOrder ?? this.sortOrder,
       createdAt: createdAt ?? this.createdAt,
@@ -1266,6 +1358,12 @@ class TasksCompanion extends UpdateCompanion<Task> {
     if (completedAt.present) {
       map['completed_at'] = Variable<DateTime>(completedAt.value);
     }
+    if (isFailed.present) {
+      map['is_failed'] = Variable<bool>(isFailed.value);
+    }
+    if (failedAt.present) {
+      map['failed_at'] = Variable<DateTime>(failedAt.value);
+    }
     if (completedOn.present) {
       map['completed_on'] = Variable<String>(completedOn.value);
     }
@@ -1290,6 +1388,8 @@ class TasksCompanion extends UpdateCompanion<Task> {
           ..write('rewardCharm: $rewardCharm, ')
           ..write('isCompleted: $isCompleted, ')
           ..write('completedAt: $completedAt, ')
+          ..write('isFailed: $isFailed, ')
+          ..write('failedAt: $failedAt, ')
           ..write('completedOn: $completedOn, ')
           ..write('sortOrder: $sortOrder, ')
           ..write('createdAt: $createdAt')
@@ -2262,6 +2362,569 @@ class TaskCompletionsCompanion extends UpdateCompanion<TaskCompletion> {
           ..write('disciplineGained: $disciplineGained, ')
           ..write('charmGained: $charmGained, ')
           ..write('completedAt: $completedAt')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $DailyTaskLogsTable extends DailyTaskLogs
+    with TableInfo<$DailyTaskLogsTable, DailyTaskLog> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $DailyTaskLogsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+    'id',
+    aliasedName,
+    false,
+    hasAutoIncrement: true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'PRIMARY KEY AUTOINCREMENT',
+    ),
+  );
+  static const VerificationMeta _taskIdMeta = const VerificationMeta('taskId');
+  @override
+  late final GeneratedColumn<int> taskId = GeneratedColumn<int>(
+    'task_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _taskNameMeta = const VerificationMeta(
+    'taskName',
+  );
+  @override
+  late final GeneratedColumn<String> taskName = GeneratedColumn<String>(
+    'task_name',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _dateMeta = const VerificationMeta('date');
+  @override
+  late final GeneratedColumn<String> date = GeneratedColumn<String>(
+    'date',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  @override
+  late final GeneratedColumnWithTypeConverter<DailyTaskStatus, int> status =
+      GeneratedColumn<int>(
+        'status',
+        aliasedName,
+        false,
+        type: DriftSqlType.int,
+        requiredDuringInsert: true,
+      ).withConverter<DailyTaskStatus>($DailyTaskLogsTable.$converterstatus);
+  static const VerificationMeta _penaltyHealthMeta = const VerificationMeta(
+    'penaltyHealth',
+  );
+  @override
+  late final GeneratedColumn<int> penaltyHealth = GeneratedColumn<int>(
+    'penalty_health',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _penaltyDisciplineMeta = const VerificationMeta(
+    'penaltyDiscipline',
+  );
+  @override
+  late final GeneratedColumn<int> penaltyDiscipline = GeneratedColumn<int>(
+    'penalty_discipline',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _penaltyCharmMeta = const VerificationMeta(
+    'penaltyCharm',
+  );
+  @override
+  late final GeneratedColumn<int> penaltyCharm = GeneratedColumn<int>(
+    'penalty_charm',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    taskId,
+    taskName,
+    date,
+    status,
+    penaltyHealth,
+    penaltyDiscipline,
+    penaltyCharm,
+    createdAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'daily_task_logs';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<DailyTaskLog> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('task_id')) {
+      context.handle(
+        _taskIdMeta,
+        taskId.isAcceptableOrUnknown(data['task_id']!, _taskIdMeta),
+      );
+    }
+    if (data.containsKey('task_name')) {
+      context.handle(
+        _taskNameMeta,
+        taskName.isAcceptableOrUnknown(data['task_name']!, _taskNameMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_taskNameMeta);
+    }
+    if (data.containsKey('date')) {
+      context.handle(
+        _dateMeta,
+        date.isAcceptableOrUnknown(data['date']!, _dateMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_dateMeta);
+    }
+    if (data.containsKey('penalty_health')) {
+      context.handle(
+        _penaltyHealthMeta,
+        penaltyHealth.isAcceptableOrUnknown(
+          data['penalty_health']!,
+          _penaltyHealthMeta,
+        ),
+      );
+    }
+    if (data.containsKey('penalty_discipline')) {
+      context.handle(
+        _penaltyDisciplineMeta,
+        penaltyDiscipline.isAcceptableOrUnknown(
+          data['penalty_discipline']!,
+          _penaltyDisciplineMeta,
+        ),
+      );
+    }
+    if (data.containsKey('penalty_charm')) {
+      context.handle(
+        _penaltyCharmMeta,
+        penaltyCharm.isAcceptableOrUnknown(
+          data['penalty_charm']!,
+          _penaltyCharmMeta,
+        ),
+      );
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  DailyTaskLog map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return DailyTaskLog(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}id'],
+      )!,
+      taskId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}task_id'],
+      ),
+      taskName: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}task_name'],
+      )!,
+      date: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}date'],
+      )!,
+      status: $DailyTaskLogsTable.$converterstatus.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.int,
+          data['${effectivePrefix}status'],
+        )!,
+      ),
+      penaltyHealth: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}penalty_health'],
+      )!,
+      penaltyDiscipline: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}penalty_discipline'],
+      )!,
+      penaltyCharm: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}penalty_charm'],
+      )!,
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}created_at'],
+      )!,
+    );
+  }
+
+  @override
+  $DailyTaskLogsTable createAlias(String alias) {
+    return $DailyTaskLogsTable(attachedDatabase, alias);
+  }
+
+  static JsonTypeConverter2<DailyTaskStatus, int, int> $converterstatus =
+      const EnumIndexConverter<DailyTaskStatus>(DailyTaskStatus.values);
+}
+
+class DailyTaskLog extends DataClass implements Insertable<DailyTaskLog> {
+  final int id;
+  final int? taskId;
+  final String taskName;
+  final String date;
+  final DailyTaskStatus status;
+
+  /// 当天该任务配置的惩罚值（实际扣除受属性下限 0 截断，见 ADR-0004）。
+  final int penaltyHealth;
+  final int penaltyDiscipline;
+  final int penaltyCharm;
+  final DateTime createdAt;
+  const DailyTaskLog({
+    required this.id,
+    this.taskId,
+    required this.taskName,
+    required this.date,
+    required this.status,
+    required this.penaltyHealth,
+    required this.penaltyDiscipline,
+    required this.penaltyCharm,
+    required this.createdAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    if (!nullToAbsent || taskId != null) {
+      map['task_id'] = Variable<int>(taskId);
+    }
+    map['task_name'] = Variable<String>(taskName);
+    map['date'] = Variable<String>(date);
+    {
+      map['status'] = Variable<int>(
+        $DailyTaskLogsTable.$converterstatus.toSql(status),
+      );
+    }
+    map['penalty_health'] = Variable<int>(penaltyHealth);
+    map['penalty_discipline'] = Variable<int>(penaltyDiscipline);
+    map['penalty_charm'] = Variable<int>(penaltyCharm);
+    map['created_at'] = Variable<DateTime>(createdAt);
+    return map;
+  }
+
+  DailyTaskLogsCompanion toCompanion(bool nullToAbsent) {
+    return DailyTaskLogsCompanion(
+      id: Value(id),
+      taskId: taskId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(taskId),
+      taskName: Value(taskName),
+      date: Value(date),
+      status: Value(status),
+      penaltyHealth: Value(penaltyHealth),
+      penaltyDiscipline: Value(penaltyDiscipline),
+      penaltyCharm: Value(penaltyCharm),
+      createdAt: Value(createdAt),
+    );
+  }
+
+  factory DailyTaskLog.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return DailyTaskLog(
+      id: serializer.fromJson<int>(json['id']),
+      taskId: serializer.fromJson<int?>(json['taskId']),
+      taskName: serializer.fromJson<String>(json['taskName']),
+      date: serializer.fromJson<String>(json['date']),
+      status: $DailyTaskLogsTable.$converterstatus.fromJson(
+        serializer.fromJson<int>(json['status']),
+      ),
+      penaltyHealth: serializer.fromJson<int>(json['penaltyHealth']),
+      penaltyDiscipline: serializer.fromJson<int>(json['penaltyDiscipline']),
+      penaltyCharm: serializer.fromJson<int>(json['penaltyCharm']),
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'taskId': serializer.toJson<int?>(taskId),
+      'taskName': serializer.toJson<String>(taskName),
+      'date': serializer.toJson<String>(date),
+      'status': serializer.toJson<int>(
+        $DailyTaskLogsTable.$converterstatus.toJson(status),
+      ),
+      'penaltyHealth': serializer.toJson<int>(penaltyHealth),
+      'penaltyDiscipline': serializer.toJson<int>(penaltyDiscipline),
+      'penaltyCharm': serializer.toJson<int>(penaltyCharm),
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+    };
+  }
+
+  DailyTaskLog copyWith({
+    int? id,
+    Value<int?> taskId = const Value.absent(),
+    String? taskName,
+    String? date,
+    DailyTaskStatus? status,
+    int? penaltyHealth,
+    int? penaltyDiscipline,
+    int? penaltyCharm,
+    DateTime? createdAt,
+  }) => DailyTaskLog(
+    id: id ?? this.id,
+    taskId: taskId.present ? taskId.value : this.taskId,
+    taskName: taskName ?? this.taskName,
+    date: date ?? this.date,
+    status: status ?? this.status,
+    penaltyHealth: penaltyHealth ?? this.penaltyHealth,
+    penaltyDiscipline: penaltyDiscipline ?? this.penaltyDiscipline,
+    penaltyCharm: penaltyCharm ?? this.penaltyCharm,
+    createdAt: createdAt ?? this.createdAt,
+  );
+  DailyTaskLog copyWithCompanion(DailyTaskLogsCompanion data) {
+    return DailyTaskLog(
+      id: data.id.present ? data.id.value : this.id,
+      taskId: data.taskId.present ? data.taskId.value : this.taskId,
+      taskName: data.taskName.present ? data.taskName.value : this.taskName,
+      date: data.date.present ? data.date.value : this.date,
+      status: data.status.present ? data.status.value : this.status,
+      penaltyHealth: data.penaltyHealth.present
+          ? data.penaltyHealth.value
+          : this.penaltyHealth,
+      penaltyDiscipline: data.penaltyDiscipline.present
+          ? data.penaltyDiscipline.value
+          : this.penaltyDiscipline,
+      penaltyCharm: data.penaltyCharm.present
+          ? data.penaltyCharm.value
+          : this.penaltyCharm,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('DailyTaskLog(')
+          ..write('id: $id, ')
+          ..write('taskId: $taskId, ')
+          ..write('taskName: $taskName, ')
+          ..write('date: $date, ')
+          ..write('status: $status, ')
+          ..write('penaltyHealth: $penaltyHealth, ')
+          ..write('penaltyDiscipline: $penaltyDiscipline, ')
+          ..write('penaltyCharm: $penaltyCharm, ')
+          ..write('createdAt: $createdAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    taskId,
+    taskName,
+    date,
+    status,
+    penaltyHealth,
+    penaltyDiscipline,
+    penaltyCharm,
+    createdAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is DailyTaskLog &&
+          other.id == this.id &&
+          other.taskId == this.taskId &&
+          other.taskName == this.taskName &&
+          other.date == this.date &&
+          other.status == this.status &&
+          other.penaltyHealth == this.penaltyHealth &&
+          other.penaltyDiscipline == this.penaltyDiscipline &&
+          other.penaltyCharm == this.penaltyCharm &&
+          other.createdAt == this.createdAt);
+}
+
+class DailyTaskLogsCompanion extends UpdateCompanion<DailyTaskLog> {
+  final Value<int> id;
+  final Value<int?> taskId;
+  final Value<String> taskName;
+  final Value<String> date;
+  final Value<DailyTaskStatus> status;
+  final Value<int> penaltyHealth;
+  final Value<int> penaltyDiscipline;
+  final Value<int> penaltyCharm;
+  final Value<DateTime> createdAt;
+  const DailyTaskLogsCompanion({
+    this.id = const Value.absent(),
+    this.taskId = const Value.absent(),
+    this.taskName = const Value.absent(),
+    this.date = const Value.absent(),
+    this.status = const Value.absent(),
+    this.penaltyHealth = const Value.absent(),
+    this.penaltyDiscipline = const Value.absent(),
+    this.penaltyCharm = const Value.absent(),
+    this.createdAt = const Value.absent(),
+  });
+  DailyTaskLogsCompanion.insert({
+    this.id = const Value.absent(),
+    this.taskId = const Value.absent(),
+    required String taskName,
+    required String date,
+    required DailyTaskStatus status,
+    this.penaltyHealth = const Value.absent(),
+    this.penaltyDiscipline = const Value.absent(),
+    this.penaltyCharm = const Value.absent(),
+    required DateTime createdAt,
+  }) : taskName = Value(taskName),
+       date = Value(date),
+       status = Value(status),
+       createdAt = Value(createdAt);
+  static Insertable<DailyTaskLog> custom({
+    Expression<int>? id,
+    Expression<int>? taskId,
+    Expression<String>? taskName,
+    Expression<String>? date,
+    Expression<int>? status,
+    Expression<int>? penaltyHealth,
+    Expression<int>? penaltyDiscipline,
+    Expression<int>? penaltyCharm,
+    Expression<DateTime>? createdAt,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (taskId != null) 'task_id': taskId,
+      if (taskName != null) 'task_name': taskName,
+      if (date != null) 'date': date,
+      if (status != null) 'status': status,
+      if (penaltyHealth != null) 'penalty_health': penaltyHealth,
+      if (penaltyDiscipline != null) 'penalty_discipline': penaltyDiscipline,
+      if (penaltyCharm != null) 'penalty_charm': penaltyCharm,
+      if (createdAt != null) 'created_at': createdAt,
+    });
+  }
+
+  DailyTaskLogsCompanion copyWith({
+    Value<int>? id,
+    Value<int?>? taskId,
+    Value<String>? taskName,
+    Value<String>? date,
+    Value<DailyTaskStatus>? status,
+    Value<int>? penaltyHealth,
+    Value<int>? penaltyDiscipline,
+    Value<int>? penaltyCharm,
+    Value<DateTime>? createdAt,
+  }) {
+    return DailyTaskLogsCompanion(
+      id: id ?? this.id,
+      taskId: taskId ?? this.taskId,
+      taskName: taskName ?? this.taskName,
+      date: date ?? this.date,
+      status: status ?? this.status,
+      penaltyHealth: penaltyHealth ?? this.penaltyHealth,
+      penaltyDiscipline: penaltyDiscipline ?? this.penaltyDiscipline,
+      penaltyCharm: penaltyCharm ?? this.penaltyCharm,
+      createdAt: createdAt ?? this.createdAt,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (taskId.present) {
+      map['task_id'] = Variable<int>(taskId.value);
+    }
+    if (taskName.present) {
+      map['task_name'] = Variable<String>(taskName.value);
+    }
+    if (date.present) {
+      map['date'] = Variable<String>(date.value);
+    }
+    if (status.present) {
+      map['status'] = Variable<int>(
+        $DailyTaskLogsTable.$converterstatus.toSql(status.value),
+      );
+    }
+    if (penaltyHealth.present) {
+      map['penalty_health'] = Variable<int>(penaltyHealth.value);
+    }
+    if (penaltyDiscipline.present) {
+      map['penalty_discipline'] = Variable<int>(penaltyDiscipline.value);
+    }
+    if (penaltyCharm.present) {
+      map['penalty_charm'] = Variable<int>(penaltyCharm.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<DateTime>(createdAt.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('DailyTaskLogsCompanion(')
+          ..write('id: $id, ')
+          ..write('taskId: $taskId, ')
+          ..write('taskName: $taskName, ')
+          ..write('date: $date, ')
+          ..write('status: $status, ')
+          ..write('penaltyHealth: $penaltyHealth, ')
+          ..write('penaltyDiscipline: $penaltyDiscipline, ')
+          ..write('penaltyCharm: $penaltyCharm, ')
+          ..write('createdAt: $createdAt')
           ..write(')'))
         .toString();
   }
@@ -4114,6 +4777,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $TaskCompletionsTable taskCompletions = $TaskCompletionsTable(
     this,
   );
+  late final $DailyTaskLogsTable dailyTaskLogs = $DailyTaskLogsTable(this);
   late final $HabitsTable habits = $HabitsTable(this);
   late final $CheckinsTable checkins = $CheckinsTable(this);
   late final $HabitMilestonesTable habitMilestones = $HabitMilestonesTable(
@@ -4130,6 +4794,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     tasks,
     subtasks,
     taskCompletions,
+    dailyTaskLogs,
     habits,
     checkins,
     habitMilestones,
@@ -4470,6 +5135,8 @@ typedef $$TasksTableCreateCompanionBuilder =
       Value<int> rewardCharm,
       Value<bool> isCompleted,
       Value<DateTime?> completedAt,
+      Value<bool> isFailed,
+      Value<DateTime?> failedAt,
       Value<String?> completedOn,
       Value<int> sortOrder,
       required DateTime createdAt,
@@ -4485,6 +5152,8 @@ typedef $$TasksTableUpdateCompanionBuilder =
       Value<int> rewardCharm,
       Value<bool> isCompleted,
       Value<DateTime?> completedAt,
+      Value<bool> isFailed,
+      Value<DateTime?> failedAt,
       Value<String?> completedOn,
       Value<int> sortOrder,
       Value<DateTime> createdAt,
@@ -4565,6 +5234,16 @@ class $$TasksTableFilterComposer extends Composer<_$AppDatabase, $TasksTable> {
 
   ColumnFilters<DateTime> get completedAt => $composableBuilder(
     column: $table.completedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get isFailed => $composableBuilder(
+    column: $table.isFailed,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get failedAt => $composableBuilder(
+    column: $table.failedAt,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -4663,6 +5342,16 @@ class $$TasksTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<bool> get isFailed => $composableBuilder(
+    column: $table.isFailed,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get failedAt => $composableBuilder(
+    column: $table.failedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get completedOn => $composableBuilder(
     column: $table.completedOn,
     builder: (column) => ColumnOrderings(column),
@@ -4726,6 +5415,12 @@ class $$TasksTableAnnotationComposer
     column: $table.completedAt,
     builder: (column) => column,
   );
+
+  GeneratedColumn<bool> get isFailed =>
+      $composableBuilder(column: $table.isFailed, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get failedAt =>
+      $composableBuilder(column: $table.failedAt, builder: (column) => column);
 
   GeneratedColumn<String> get completedOn => $composableBuilder(
     column: $table.completedOn,
@@ -4801,6 +5496,8 @@ class $$TasksTableTableManager
                 Value<int> rewardCharm = const Value.absent(),
                 Value<bool> isCompleted = const Value.absent(),
                 Value<DateTime?> completedAt = const Value.absent(),
+                Value<bool> isFailed = const Value.absent(),
+                Value<DateTime?> failedAt = const Value.absent(),
                 Value<String?> completedOn = const Value.absent(),
                 Value<int> sortOrder = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
@@ -4814,6 +5511,8 @@ class $$TasksTableTableManager
                 rewardCharm: rewardCharm,
                 isCompleted: isCompleted,
                 completedAt: completedAt,
+                isFailed: isFailed,
+                failedAt: failedAt,
                 completedOn: completedOn,
                 sortOrder: sortOrder,
                 createdAt: createdAt,
@@ -4829,6 +5528,8 @@ class $$TasksTableTableManager
                 Value<int> rewardCharm = const Value.absent(),
                 Value<bool> isCompleted = const Value.absent(),
                 Value<DateTime?> completedAt = const Value.absent(),
+                Value<bool> isFailed = const Value.absent(),
+                Value<DateTime?> failedAt = const Value.absent(),
                 Value<String?> completedOn = const Value.absent(),
                 Value<int> sortOrder = const Value.absent(),
                 required DateTime createdAt,
@@ -4842,6 +5543,8 @@ class $$TasksTableTableManager
                 rewardCharm: rewardCharm,
                 isCompleted: isCompleted,
                 completedAt: completedAt,
+                isFailed: isFailed,
+                failedAt: failedAt,
                 completedOn: completedOn,
                 sortOrder: sortOrder,
                 createdAt: createdAt,
@@ -5516,6 +6219,292 @@ typedef $$TaskCompletionsTableProcessedTableManager =
         BaseReferences<_$AppDatabase, $TaskCompletionsTable, TaskCompletion>,
       ),
       TaskCompletion,
+      PrefetchHooks Function()
+    >;
+typedef $$DailyTaskLogsTableCreateCompanionBuilder =
+    DailyTaskLogsCompanion Function({
+      Value<int> id,
+      Value<int?> taskId,
+      required String taskName,
+      required String date,
+      required DailyTaskStatus status,
+      Value<int> penaltyHealth,
+      Value<int> penaltyDiscipline,
+      Value<int> penaltyCharm,
+      required DateTime createdAt,
+    });
+typedef $$DailyTaskLogsTableUpdateCompanionBuilder =
+    DailyTaskLogsCompanion Function({
+      Value<int> id,
+      Value<int?> taskId,
+      Value<String> taskName,
+      Value<String> date,
+      Value<DailyTaskStatus> status,
+      Value<int> penaltyHealth,
+      Value<int> penaltyDiscipline,
+      Value<int> penaltyCharm,
+      Value<DateTime> createdAt,
+    });
+
+class $$DailyTaskLogsTableFilterComposer
+    extends Composer<_$AppDatabase, $DailyTaskLogsTable> {
+  $$DailyTaskLogsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get taskId => $composableBuilder(
+    column: $table.taskId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get taskName => $composableBuilder(
+    column: $table.taskName,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get date => $composableBuilder(
+    column: $table.date,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnWithTypeConverterFilters<DailyTaskStatus, DailyTaskStatus, int>
+  get status => $composableBuilder(
+    column: $table.status,
+    builder: (column) => ColumnWithTypeConverterFilters(column),
+  );
+
+  ColumnFilters<int> get penaltyHealth => $composableBuilder(
+    column: $table.penaltyHealth,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get penaltyDiscipline => $composableBuilder(
+    column: $table.penaltyDiscipline,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get penaltyCharm => $composableBuilder(
+    column: $table.penaltyCharm,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$DailyTaskLogsTableOrderingComposer
+    extends Composer<_$AppDatabase, $DailyTaskLogsTable> {
+  $$DailyTaskLogsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get taskId => $composableBuilder(
+    column: $table.taskId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get taskName => $composableBuilder(
+    column: $table.taskName,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get date => $composableBuilder(
+    column: $table.date,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get status => $composableBuilder(
+    column: $table.status,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get penaltyHealth => $composableBuilder(
+    column: $table.penaltyHealth,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get penaltyDiscipline => $composableBuilder(
+    column: $table.penaltyDiscipline,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get penaltyCharm => $composableBuilder(
+    column: $table.penaltyCharm,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$DailyTaskLogsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $DailyTaskLogsTable> {
+  $$DailyTaskLogsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<int> get taskId =>
+      $composableBuilder(column: $table.taskId, builder: (column) => column);
+
+  GeneratedColumn<String> get taskName =>
+      $composableBuilder(column: $table.taskName, builder: (column) => column);
+
+  GeneratedColumn<String> get date =>
+      $composableBuilder(column: $table.date, builder: (column) => column);
+
+  GeneratedColumnWithTypeConverter<DailyTaskStatus, int> get status =>
+      $composableBuilder(column: $table.status, builder: (column) => column);
+
+  GeneratedColumn<int> get penaltyHealth => $composableBuilder(
+    column: $table.penaltyHealth,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get penaltyDiscipline => $composableBuilder(
+    column: $table.penaltyDiscipline,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get penaltyCharm => $composableBuilder(
+    column: $table.penaltyCharm,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+}
+
+class $$DailyTaskLogsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $DailyTaskLogsTable,
+          DailyTaskLog,
+          $$DailyTaskLogsTableFilterComposer,
+          $$DailyTaskLogsTableOrderingComposer,
+          $$DailyTaskLogsTableAnnotationComposer,
+          $$DailyTaskLogsTableCreateCompanionBuilder,
+          $$DailyTaskLogsTableUpdateCompanionBuilder,
+          (
+            DailyTaskLog,
+            BaseReferences<_$AppDatabase, $DailyTaskLogsTable, DailyTaskLog>,
+          ),
+          DailyTaskLog,
+          PrefetchHooks Function()
+        > {
+  $$DailyTaskLogsTableTableManager(_$AppDatabase db, $DailyTaskLogsTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$DailyTaskLogsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$DailyTaskLogsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$DailyTaskLogsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                Value<int?> taskId = const Value.absent(),
+                Value<String> taskName = const Value.absent(),
+                Value<String> date = const Value.absent(),
+                Value<DailyTaskStatus> status = const Value.absent(),
+                Value<int> penaltyHealth = const Value.absent(),
+                Value<int> penaltyDiscipline = const Value.absent(),
+                Value<int> penaltyCharm = const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+              }) => DailyTaskLogsCompanion(
+                id: id,
+                taskId: taskId,
+                taskName: taskName,
+                date: date,
+                status: status,
+                penaltyHealth: penaltyHealth,
+                penaltyDiscipline: penaltyDiscipline,
+                penaltyCharm: penaltyCharm,
+                createdAt: createdAt,
+              ),
+          createCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                Value<int?> taskId = const Value.absent(),
+                required String taskName,
+                required String date,
+                required DailyTaskStatus status,
+                Value<int> penaltyHealth = const Value.absent(),
+                Value<int> penaltyDiscipline = const Value.absent(),
+                Value<int> penaltyCharm = const Value.absent(),
+                required DateTime createdAt,
+              }) => DailyTaskLogsCompanion.insert(
+                id: id,
+                taskId: taskId,
+                taskName: taskName,
+                date: date,
+                status: status,
+                penaltyHealth: penaltyHealth,
+                penaltyDiscipline: penaltyDiscipline,
+                penaltyCharm: penaltyCharm,
+                createdAt: createdAt,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable<$DailyTaskLogsTable, DailyTaskLog>(table),
+                  BaseReferences<
+                    _$AppDatabase,
+                    $DailyTaskLogsTable,
+                    DailyTaskLog
+                  >(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$DailyTaskLogsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $DailyTaskLogsTable,
+      DailyTaskLog,
+      $$DailyTaskLogsTableFilterComposer,
+      $$DailyTaskLogsTableOrderingComposer,
+      $$DailyTaskLogsTableAnnotationComposer,
+      $$DailyTaskLogsTableCreateCompanionBuilder,
+      $$DailyTaskLogsTableUpdateCompanionBuilder,
+      (
+        DailyTaskLog,
+        BaseReferences<_$AppDatabase, $DailyTaskLogsTable, DailyTaskLog>,
+      ),
+      DailyTaskLog,
       PrefetchHooks Function()
     >;
 typedef $$HabitsTableCreateCompanionBuilder =
@@ -6982,6 +7971,8 @@ class $AppDatabaseManager {
       $$SubtasksTableTableManager(_db, _db.subtasks);
   $$TaskCompletionsTableTableManager get taskCompletions =>
       $$TaskCompletionsTableTableManager(_db, _db.taskCompletions);
+  $$DailyTaskLogsTableTableManager get dailyTaskLogs =>
+      $$DailyTaskLogsTableTableManager(_db, _db.dailyTaskLogs);
   $$HabitsTableTableManager get habits =>
       $$HabitsTableTableManager(_db, _db.habits);
   $$CheckinsTableTableManager get checkins =>

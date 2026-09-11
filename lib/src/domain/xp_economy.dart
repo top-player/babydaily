@@ -9,16 +9,12 @@ const int maxLevel = 50;
 /// 初始等级。
 const int startingLevel = 1;
 
-/// 固定经验来源（ADR-0003）。
+/// 固定经验来源（ADR-0003；笔记自 ADR-0006 起不再发放经验）。
 const int mainlineXp = 50;
 const int sideQuestXp = 20;
 const int subtaskXp = 0;
 const int dailyTaskXp = 0;
 const int habitCheckinXp = 5;
-
-/// 笔记经验：基础值 + 连续加成。
-const int noteBaseXp = 10;
-const int noteStreakBonusCap = 5;
 
 /// 每日习惯连续里程碑：连续天数 → 一次性经验奖励。
 const Map<int, int> milestoneRewards = {10: 20, 20: 30, 30: 50};

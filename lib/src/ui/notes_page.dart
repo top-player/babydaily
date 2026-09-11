@@ -1,12 +1,12 @@
 /// 笔记页：按天翻页浏览、一天多篇、编辑/删除、全文关键词搜索（命中跳转当天）。
+///
+/// 笔记不参与成长结算：写笔记不发经验（ADR-0006）。
 library;
 
 import 'package:flutter/material.dart';
 import 'package:babydaily/src/data/database.dart';
-import 'package:babydaily/src/domain/game_service.dart';
 import 'package:babydaily/src/ui/app_controller.dart';
 import 'package:babydaily/src/ui/clay.dart';
-import 'package:babydaily/src/ui/feedback.dart';
 
 class NotesPage extends StatefulWidget {
   const NotesPage({super.key});
@@ -68,7 +68,7 @@ class _NotesPageState extends State<NotesPage> {
               Padding(
                 padding: const EdgeInsets.only(top: 8),
                 child: Text(
-                  '写满 20 字当天 +10 经验，连续写还有加成（每天最多 15）',
+                  '笔记只存在本机，随时可以编辑或删除；不发放经验。',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               ),
@@ -92,17 +92,12 @@ class _NotesPageState extends State<NotesPage> {
     if (content.trim().isEmpty || !mounted) return;
 
     final service = AppScope.read(context).service;
-    NoteResult result;
     if (existing == null) {
-      result = await service.addNote(content, now: DateTime.now());
+      await service.addNote(content, now: DateTime.now());
     } else {
-      result = await service.updateNote(existing.id, content);
+      await service.updateNote(existing.id, content);
     }
-    if (!mounted) return;
-    if (result.xpGained > 0) {
-      showCelebration(context, '记录 +${result.xpGained} 经验 ✍️');
-    }
-    await AppScope.read(context).refresh();
+    // 保存后列表立即出现新内容，不再弹提示条（会盖住「写笔记」按钮）
     await _load();
   }
 

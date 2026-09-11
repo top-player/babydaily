@@ -1,4 +1,4 @@
-/// 连续坚持计算：每日习惯按天、每周 N 次习惯按连续达标周、笔记按天。
+/// 连续坚持计算：每日习惯按天、每周 N 次习惯按连续达标周。
 ///
 /// 全部为纯函数，输入输出都使用"日期部分"（DateTime 的时分秒忽略）。
 library;
@@ -14,7 +14,7 @@ DateTime mondayOf(DateTime day) {
 
 /// 当前连续天数：从今天往回数连续存在打卡的日期。
 ///
-/// 今天尚未打卡时不算断签——从昨天继续数（习惯/笔记都可当天补）。
+/// 今天尚未打卡时不算断签——从昨天继续数（习惯可当天补）。
 int currentDailyStreak(Set<DateTime> dates, DateTime today) {
   final t = dateOnly(today);
   var cursor = dates.contains(t) ? t : t.subtract(const Duration(days: 1));
@@ -25,10 +25,6 @@ int currentDailyStreak(Set<DateTime> dates, DateTime today) {
   }
   return streak;
 }
-
-/// 笔记的连续天数（语义同每日习惯：当天已写或今天还没写都可继续数）。
-int noteStreakDays(Set<DateTime> days, DateTime today) =>
-    currentDailyStreak(days, today);
 
 /// 当前连续达标周数：每周 N 次习惯在自然周（周一至周日）内打卡 ≥ N 次即达标。
 ///

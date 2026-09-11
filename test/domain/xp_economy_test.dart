@@ -83,14 +83,12 @@ void main() {
   });
 
   group('经验经济常量（锁定 ADR-0003 的固定数值）', () {
-    test('固定来源', () {
+    test('固定来源（笔记自 ADR-0006 起不发经验）', () {
       expect(mainlineXp, 50);
       expect(sideQuestXp, 20);
       expect(subtaskXp, 0);
       expect(dailyTaskXp, 0);
       expect(habitCheckinXp, 5);
-      expect(noteBaseXp, 10);
-      expect(noteStreakBonusCap, 5);
     });
 
     test('每日习惯连续里程碑（每习惯终身一次）', () {
