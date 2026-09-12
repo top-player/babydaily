@@ -94,8 +94,7 @@ class _TasksPageState extends State<TasksPage> {
             if (log.status == DailyTaskStatus.failed) log.taskId,
         };
         _subtasksByTask = subtasksByTask;
-      });
-    }
+      });    }
   }
 
   Future<void> _afterMutation(GrowthOutcome? outcome) async {
@@ -144,16 +143,54 @@ class _TasksPageState extends State<TasksPage> {
     showNotice(context, '「${failOutcome.taskName}」已标记失败，任务保留在已失败里');
   }
 
-  /// 每日任务入口卡的容器变换；第一次 build 时惰性创建，之后复用同一个
-  /// Opener（GlobalKey 不能每次重建都换新）。
-  Opener? _dailyEntryOpener;
-
-  Opener get _dailyOpener => _dailyEntryOpener ??= openContainerTransform(
+  /// 每日任务入口卡的容器变换；**每次 build 现出**（缓存 widget 实例会让
+  /// `Element.updateChild` 跳过整棵子树的重建，卡片会停在旧内容上）。
+  Widget _dailyOpener() => openContainerTransform(
     context: context,
     openBuilder: (context, close) => const DailyTasksPage(),
     closedBuilder: _closedDailyEntryCard,
     onClosed: (_) => _load(),
   );
+
+  /// 「添加任务」FAB 的容器变换。
+  Widget _addTaskOpener() => taskEditorTransform(
+    context: context,
+    allowedTypes: const [TaskType.mainline, TaskType.side],
+    trigger: _addTaskButton,
+    onSaved: () => _load(),
+  );
+
+  Widget _addTaskButton(BuildContext context, VoidCallback open) {
+    return FloatingActionButton.extended(
+      // 关掉 Hero：容器变换本身就是这个按钮的转场；留着 Hero 会在推入瞬间
+      // 触发一次「源按钮 → 容器里那份快照」的飞行，两边一起消失。
+      heroTag: null,
+      onPressed: open,
+      icon: const Icon(Icons.add),
+      label: const Text('添加任务'),
+    );
+  }
+
+  /// 任务卡的 ⋮ 菜单：它同时是「编辑」的容器变换源元素（点编辑从 ⋮ 长大成编辑页）。
+  Widget _editorOpenerFor(
+    Task t, {
+    List<Subtask>? subtasks,
+    bool allowFail = true,
+  }) {
+    return taskEditorTransform(
+      context: context,
+      task: t,
+      subtasks: subtasks,
+      allowedTypes: const [TaskType.mainline, TaskType.side],
+      trigger: (context, open) => _menuButton(
+        t,
+        subtasks: subtasks,
+        allowFail: allowFail,
+        openEditor: open,
+      ),
+      onSaved: () => _load(),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -239,26 +276,12 @@ class _TasksPageState extends State<TasksPage> {
           ],
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        heroTag: 'tasks-fab',
-        onPressed: () async {
-          await showTaskDialog(
-            context,
-            allowedTypes: const [TaskType.mainline, TaskType.side],
-          );
-          await _load();
-        },
-        icon: const Icon(Icons.add),
-        label: const Text('添加任务'),
-      ),
+      floatingActionButton: _addTaskOpener(),
     );
   }
 
   /// 每日任务入口卡：今天进度 + 前几个任务，点卡片走容器变换进每日任务页。
-  Widget _dailyEntryCard() {
-    // 卡片本体的构建搬到容器变换的 closedBuilder（同一个 Opener 复用）。
-    return _dailyOpener;
-  }
+  Widget _dailyEntryCard() => _dailyOpener();
 
   Widget _closedDailyEntryCard(BuildContext context, VoidCallback open) {
     final scheme = Theme.of(context).colorScheme;
@@ -492,17 +515,13 @@ class _TasksPageState extends State<TasksPage> {
     Task t, {
     List<Subtask>? subtasks,
     bool allowFail = true,
+    required VoidCallback openEditor,
   }) {
     return PopupMenuButton<String>(
       onSelected: (value) async {
         if (value == 'edit') {
-          await showTaskDialog(
-            context,
-            task: t,
-            subtasks: subtasks,
-            allowedTypes: const [TaskType.mainline, TaskType.side],
-          );
-          await _load();
+          // 容器变换：从 ⋮ 的位置与尺寸长大成编辑页。
+          openEditor();
         } else if (value == 'fail') {
           await _failTask(t);
         } else if (value == 'delete') {
@@ -577,7 +596,7 @@ class _TasksPageState extends State<TasksPage> {
             ),
           ),
         ),
-        _menuButton(t, subtasks: subtasks, allowFail: allowFail),
+        _editorOpenerFor(t, subtasks: subtasks, allowFail: allowFail),
       ],
     );
   }
@@ -814,7 +833,7 @@ class _TasksPageState extends State<TasksPage> {
               ],
             ),
           ),
-          _menuButton(t, allowFail: false),
+          _editorOpenerFor(t, allowFail: false),
         ],
       ),
     );
@@ -849,7 +868,7 @@ class _TasksPageState extends State<TasksPage> {
               ],
             ),
           ),
-          _menuButton(t, allowFail: false),
+          _editorOpenerFor(t, allowFail: false),
         ],
       ),
     );

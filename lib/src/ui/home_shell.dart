@@ -226,12 +226,16 @@ class _HomeShellState extends State<HomeShell>
   }
 }
 
-/// 滑轨上的一格：按与当前位置的差距水平平移，滑出去时渐隐、离屏后不绘制。
+/// 滑轨上的一格：按与当前位置的差距水平平移，完全滑出屏幕后不布局不绘制。
 ///
 /// [child] 通过 [AnimatedBuilder] 的 `child` 参数传入，动画帧不会重建页面
 /// 子树——切标签只是平移，不会让页面重新挂载（重新取数、丢滚动位置）。
 ///
-/// 离屏页用 `Visibility(offstage: true)` 关掉：它保留 State、不布局不绘制，
+/// 只平移、**不做透明度渐隐**：原来两层整屏 `Opacity` 会让光栅线程每帧各开一张
+/// 离屏缓冲，而且滑到一半时两页都只剩 20% 不透明、整屏发白。两页都是不透明的
+/// 整屏页面，直接滑过去（ViewPager 那种观感）更快也更干净。
+///
+/// 离屏页用 [Offstage] 关掉：它保留 State、不布局不绘制，
 /// 而且和 `IndexedStack` 一样让屏外页面在 `find.text` 这类默认
 /// `skipOffstage: true` 的查找里不可见（否则四个页面里同名的「任务」「习惯」
 /// 文案会互相打架）。
@@ -258,18 +262,13 @@ class _SlotPage extends StatelessWidget {
       builder: (context, page) {
         final distance = slot - position.value;
         final width = MediaQuery.sizeOf(context).width;
-        final onscreen = distance.abs() < 1;
         return Transform.translate(
           // 第 i 页平时的位置在 i 页宽处，减去当前平移量就是它现在该在的位置。
           offset: Offset(distance * width, 0),
           child: Offstage(
             // 完全滑出屏幕就不布局/不绘制，也不进 finder（页面 State 保留）。
-            offstage: !onscreen,
-            child: Opacity(
-              // 正位不透明，滑出去时渐隐。
-              opacity: (1 - distance.abs() * 1.6).clamp(0.0, 1.0),
-              child: page,
-            ),
+            offstage: distance.abs() >= 1,
+            child: page,
           ),
         );
       },

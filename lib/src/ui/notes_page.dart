@@ -7,6 +7,8 @@ import 'package:flutter/material.dart';
 import 'package:babydaily/src/data/database.dart';
 import 'package:babydaily/src/ui/app_controller.dart';
 import 'package:babydaily/src/ui/clay.dart';
+import 'package:babydaily/src/ui/motion.dart';
+import 'package:babydaily/src/ui/note_editor.dart';
 
 class NotesPage extends StatefulWidget {
   const NotesPage({super.key});
@@ -47,50 +49,13 @@ class _NotesPageState extends State<NotesPage> {
     if (mounted) setState(() => _results = results);
   }
 
-  Future<void> _write({Note? existing}) async {
-    final controller = TextEditingController(text: existing?.content ?? '');
-    final saved = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text(existing == null ? '写笔记' : '编辑笔记'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              TextField(
-                controller: controller,
-                autofocus: existing == null,
-                maxLines: 8,
-                maxLength: 2000,
-                decoration: const InputDecoration(hintText: '今天想记录点什么？'),
-              ),
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Text(
-                  '笔记只存在本机，随时可以编辑或删除；不发放经验。',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('保存'),
-          ),
-        ],
-      ),
-    );
-    if (saved != true) return;
-    final content = controller.text;
+  /// 保存笔记正文（来自笔记编辑器页：`pop(<正文>)`）。
+  ///
+  /// 落库仍归笔记页管——笔记不参与成长结算这条规则只有一处实现（ADR-0006）。
+  Future<void> _saveNote(Object? result, {Note? existing}) async {
+    if (result is! String) return;
+    final content = result;
     if (content.trim().isEmpty || !mounted) return;
-
     final service = AppScope.read(context).service;
     if (existing == null) {
       await service.addNote(content, now: DateTime.now());
@@ -100,6 +65,21 @@ class _NotesPageState extends State<NotesPage> {
     // 保存后列表立即出现新内容，不再弹提示条（会盖住「写笔记」按钮）
     await _load();
   }
+
+  /// 「写笔记」FAB 的容器变换；**每次 build 现出**（缓存 widget 实例会让
+  /// Element.updateChild 跳过整棵子树的重建）。
+  Widget _writeOpener() => openEditorTransform(
+    context: context,
+    page: (context) => const NoteEditorPage(),
+    trigger: (context, open) => FloatingActionButton.extended(
+      // 关掉 Hero：容器变换本身就是这个按钮的转场。
+      heroTag: null,
+      onPressed: open,
+      icon: const Icon(Icons.edit),
+      label: const Text('写笔记'),
+    ),
+    onClosed: (result) => _saveNote(result, existing: null),
+  );
 
   Future<void> _delete(Note note) async {
     final confirmed = await showDialog<bool>(
@@ -176,14 +156,7 @@ class _NotesPageState extends State<NotesPage> {
         ],
       ),
       body: _searching ? _buildSearchResults() : _buildDayView(),
-      floatingActionButton: _searching
-          ? null
-          : FloatingActionButton.extended(
-              heroTag: 'notes-fab',
-              onPressed: () => _write(),
-              icon: const Icon(Icons.edit),
-              label: const Text('写笔记'),
-            ),
+      floatingActionButton: _searching ? null : _writeOpener(),
     );
   }
 
@@ -392,48 +365,11 @@ class _NotesPageState extends State<NotesPage> {
                   separatorBuilder: (_, _) => const SizedBox(height: 10),
                   itemBuilder: (context, index) {
                     final note = _notes[index];
-                    final time =
-                        '${note.createdAt.hour.toString().padLeft(2, '0')}:'
-                        '${note.createdAt.minute.toString().padLeft(2, '0')}';
-                    return Card(
-                      margin: EdgeInsets.zero,
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 14, 4, 14),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(
-                              child: InkWell(
-                                onTap: () => _write(existing: note),
-                                borderRadius: BorderRadius.circular(14),
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 2,
-                                  ),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      TagPill(
-                                        icon: Icons.schedule,
-                                        text: time,
-                                        color: scheme.onSurfaceVariant,
-                                      ),
-                                      const SizedBox(height: 8),
-                                      Text(note.content),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ),
-                            IconButton(
-                              onPressed: () => _delete(note),
-                              icon: const Icon(Icons.delete_outline),
-                              tooltip: '删除笔记',
-                            ),
-                          ],
-                        ),
-                      ),
+                    return _NoteCard(
+                      key: ValueKey<int>(note.id),
+                      note: note,
+                      onSave: (result) => _saveNote(result, existing: note),
+                      onDelete: () => _delete(note),
                     );
                   },
                 ),
@@ -451,4 +387,87 @@ class _NotesPageState extends State<NotesPage> {
     6 => '六',
     _ => '日',
   };
+}
+
+/// 一张笔记卡：点卡片走容器变换（从卡片位置放大）进笔记编辑页，正文原样带过去。
+///
+/// 做成 StatefulWidget 是为了让 [Opener] 随这张卡的 Element 只建一次——
+/// 若在列表构建里现建，`GlobalKey` 每次重建都会换新，容器状态跟着重来。
+class _NoteCard extends StatefulWidget {
+  const _NoteCard({
+    super.key,
+    required this.note,
+    required this.onSave,
+    required this.onDelete,
+  });
+
+  final Note note;
+
+  /// 编辑页 `pop(<正文>)` 后的回调（落库 + 刷新由笔记页负责）。
+  final ValueChanged<Object?> onSave;
+
+  final VoidCallback onDelete;
+
+  @override
+  State<_NoteCard> createState() => _NoteCardState();
+}
+
+class _NoteCardState extends State<_NoteCard> {
+  Widget _opener() => openEditorTransform(
+    context: context,
+    page: (context) => NoteEditorPage(
+      initialText: widget.note.content,
+      editing: true,
+    ),
+    trigger: _closedCard,
+    onClosed: widget.onSave,
+  );
+
+  @override
+  Widget build(BuildContext context) => _opener();
+
+  Widget _closedCard(BuildContext context, VoidCallback open) {
+    final note = widget.note;
+    final time =
+        '${note.createdAt.hour.toString().padLeft(2, '0')}:'
+        '${note.createdAt.minute.toString().padLeft(2, '0')}';
+    final scheme = Theme.of(context).colorScheme;
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 14, 4, 14),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: InkWell(
+                onTap: open,
+                borderRadius: BorderRadius.circular(14),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 2),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      TagPill(
+                        icon: Icons.schedule,
+                        text: time,
+                        color: scheme.onSurfaceVariant,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(note.content),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            IconButton(
+              onPressed: widget.onDelete,
+              icon: const Icon(Icons.delete_outline),
+              tooltip: '删除笔记',
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }

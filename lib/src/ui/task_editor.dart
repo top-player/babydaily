@@ -1,4 +1,8 @@
-/// 任务编辑对话框与失败确认：任务页（主线/支线）与每日任务页共用。
+/// 任务编辑页与失败确认：任务页（主线/支线）与每日任务页共用。
+///
+/// 「添加/编辑」都走整页表单（原来是与 `showDialog` 的对话框）：只有整页才能
+/// 做容器变换——从 FAB、卡片 ⋮ 的位置与尺寸长大成页面；顺带摆脱对话框里
+/// 键盘把表单挤成两行可滚的窘境。语义不变：保存成功 `pop(true)`，调用方刷新列表。
 library;
 
 import 'package:flutter/material.dart';
@@ -7,6 +11,8 @@ import 'package:babydaily/src/domain/attributes.dart';
 import 'package:babydaily/src/domain/enums.dart';
 import 'package:babydaily/src/domain/xp_economy.dart';
 import 'package:babydaily/src/ui/app_controller.dart';
+import 'package:babydaily/src/ui/editor_page.dart';
+import 'package:babydaily/src/ui/motion.dart';
 
 /// 类型选择器里可用的类型（每日任务页只允许建每日任务）。
 const List<TaskType> kTaskTypes = [
@@ -15,145 +21,193 @@ const List<TaskType> kTaskTypes = [
   TaskType.daily,
 ];
 
-/// 新建/编辑任务的对话框。
+/// 新建/编辑任务的整页表单。
 ///
-/// 保存后由调用方重新加载列表；取消或名称为空则不改动任何数据。
-Future<void> showTaskDialog(
-  BuildContext context, {
+/// 保存后 `pop(true)` 由调用方重新加载列表；取消、或名称为空时不落库。
+class TaskEditorPage extends StatefulWidget {
+  const TaskEditorPage({
+    super.key,
+    this.task,
+    this.subtasks,
+    this.allowedTypes = kTaskTypes,
+  });
+
+  /// 为空表示新建。
+  final Task? task;
+
+  /// 编辑主线时带上已有子项，保存时不做子项增删（与原来的对话框一致）。
+  final List<Subtask>? subtasks;
+
+  /// 允许选择的类型（每日任务页只给每日任务）。
+  final List<TaskType> allowedTypes;
+
+  @override
+  State<TaskEditorPage> createState() => _TaskEditorPageState();
+}
+
+class _TaskEditorPageState extends State<TaskEditorPage> {
+  late final TextEditingController _name = TextEditingController(
+    text: widget.task?.name ?? '',
+  );
+  late final TextEditingController _desc = TextEditingController(
+    text: widget.task?.description ?? '',
+  );
+  late final TextEditingController _health = TextEditingController(
+    text: _initial(widget.task?.rewardHealth, 0),
+  );
+  late final TextEditingController _discipline = TextEditingController(
+    text: _initial(widget.task?.rewardDiscipline, widget.task == null ? 1 : 0),
+  );
+  late final TextEditingController _charm = TextEditingController(
+    text: _initial(widget.task?.rewardCharm, 0),
+  );
+  late final TextEditingController _subtasks = TextEditingController(
+    text: (widget.subtasks ?? const <Subtask>[]).map((s) => s.name).join('\n'),
+  );
+  late TaskType _type = widget.task?.type ?? widget.allowedTypes.first;
+
+  /// 旧的对话框取值规则：已有值大于 0 就用它，否则用默认值。
+  static String _initial(int? value, int fallback) =>
+      value != null && value > 0 ? '$value' : '$fallback';
+
+  @override
+  void dispose() {
+    _name.dispose();
+    _desc.dispose();
+    _health.dispose();
+    _discipline.dispose();
+    _charm.dispose();
+    _subtasks.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    final name = _name.text.trim();
+    final navigator = Navigator.of(context);
+    if (name.isEmpty) {
+      navigator.pop();
+      return;
+    }
+    final controller = AppScope.read(context);
+    final reward = AttributeDelta(
+      health: parseAttribute(_health.text),
+      discipline: parseAttribute(_discipline.text),
+      charm: parseAttribute(_charm.text),
+    );
+    final task = widget.task;
+    if (task == null) {
+      final id = await controller.service.createTask(
+        name: name,
+        description: _desc.text.trim(),
+        type: _type,
+        reward: reward,
+      );
+      final lines = _subtasks.text
+          .split('\n')
+          .map((l) => l.trim())
+          .where((l) => l.isNotEmpty);
+      for (final line in lines) {
+        await controller.service.createSubtask(taskId: id, name: line);
+      }
+    } else {
+      await controller.service.updateTask(
+        id: task.id,
+        name: name,
+        description: _desc.text.trim(),
+        reward: reward,
+      );
+    }
+    if (mounted) navigator.pop(true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final editing = widget.task != null;
+    return EditorPage(
+      title: editing ? '编辑任务' : '添加任务',
+      subtitle: taskTypeHint(_type),
+      onSave: _save,
+      children: [
+        if (widget.allowedTypes.length > 1) ...[
+          SegmentedButton<TaskType>(
+            segments: [
+              for (final t in widget.allowedTypes)
+                ButtonSegment(value: t, label: Text(taskTypeLabel(t))),
+            ],
+            selected: {_type},
+            // 编辑不改类型（换了类型会让已完成/失败归档的语义错位）。
+            onSelectionChanged: editing
+                ? null
+                : (s) => setState(() => _type = s.first),
+          ),
+          const SizedBox(height: 16),
+        ],
+        TextField(
+          controller: _name,
+          maxLength: 30,
+          autofocus: !editing,
+          decoration: const InputDecoration(labelText: '名称'),
+        ),
+        TextField(
+          controller: _desc,
+          maxLength: 100,
+          decoration: const InputDecoration(labelText: '描述（可选）'),
+        ),
+        const SizedBox(height: 8),
+        Text('奖励（属性）', style: Theme.of(context).textTheme.titleSmall),
+        const SizedBox(height: 6),
+        Row(
+          children: [
+            Expanded(child: RewardField(label: '健康', controller: _health)),
+            const SizedBox(width: 8),
+            Expanded(
+              child: RewardField(label: '自律', controller: _discipline),
+            ),
+            const SizedBox(width: 8),
+            Expanded(child: RewardField(label: '魅力', controller: _charm)),
+          ],
+        ),
+        if (_type == TaskType.mainline && !editing) ...[
+          const SizedBox(height: 16),
+          TextField(
+            controller: _subtasks,
+            maxLines: 3,
+            maxLength: 200,
+            decoration: const InputDecoration(
+              labelText: '子项（可选，每行一个）',
+              alignLabelWithHint: true,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+/// 「FAB / ⋮ → 任务编辑页」的容器变换。
+///
+/// 每次调用只建一次 [Opener]（它带 GlobalKey，不能在 `itemBuilder` 里现建）。
+Opener taskEditorTransform({
+  required BuildContext context,
+  required Widget Function(BuildContext context, VoidCallback open) trigger,
+  required VoidCallback onSaved,
   Task? task,
   List<Subtask>? subtasks,
   List<TaskType> allowedTypes = kTaskTypes,
-}) async {
-  final controller = AppScope.read(context);
-  final nameController = TextEditingController(text: task?.name ?? '');
-  final descController = TextEditingController(text: task?.description ?? '');
-  final healthController = TextEditingController(
-    text: task != null && task.rewardHealth > 0 ? '${task.rewardHealth}' : '0',
-  );
-  final disciplineController = TextEditingController(
-    text: task != null && task.rewardDiscipline > 0
-        ? '${task.rewardDiscipline}'
-        : (task == null ? '1' : '0'),
-  );
-  final charmController = TextEditingController(
-    text: task != null && task.rewardCharm > 0 ? '${task.rewardCharm}' : '0',
-  );
-  final subtasksController = TextEditingController(
-    text: (subtasks ?? const <Subtask>[]).map((s) => s.name).join('\n'),
-  );
-
-  var type = task?.type ?? allowedTypes.first;
-
-  final result = await showDialog<bool>(
+}) {
+  return openEditorTransform(
     context: context,
-    builder: (dialogContext) => StatefulBuilder(
-      builder: (context, setDialogState) => AlertDialog(
-        title: Text(task == null ? '添加任务' : '编辑任务'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (allowedTypes.length > 1)
-                SegmentedButton<TaskType>(
-                  segments: [
-                    for (final t in allowedTypes)
-                      ButtonSegment(value: t, label: Text(taskTypeLabel(t))),
-                  ],
-                  selected: {type},
-                  onSelectionChanged: task == null
-                      ? (s) => setDialogState(() => type = s.first)
-                      : null, // 编辑不改类型
-                ),
-              if (allowedTypes.length > 1) const SizedBox(height: 12),
-              TextField(
-                controller: nameController,
-                maxLength: 30,
-                decoration: const InputDecoration(labelText: '名称'),
-              ),
-              TextField(
-                controller: descController,
-                maxLength: 100,
-                decoration: const InputDecoration(labelText: '描述（可选）'),
-              ),
-              const SizedBox(height: 12),
-              Text('奖励（属性）', style: Theme.of(context).textTheme.titleSmall),
-              Row(
-                children: [
-                  Expanded(child: _rewardField(context, '健康', healthController)),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: _rewardField(context, '自律', disciplineController),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(child: _rewardField(context, '魅力', charmController)),
-                ],
-              ),
-              const SizedBox(height: 4),
-              Text(
-                taskTypeHint(type),
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-              if (type == TaskType.mainline && task == null) ...[
-                const SizedBox(height: 12),
-                TextField(
-                  controller: subtasksController,
-                  maxLines: 3,
-                  maxLength: 200,
-                  decoration: const InputDecoration(
-                    labelText: '子项（可选，每行一个）',
-                    alignLabelWithHint: true,
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('保存'),
-          ),
-        ],
-      ),
+    trigger: trigger,
+    page: (context) => TaskEditorPage(
+      task: task,
+      subtasks: subtasks,
+      allowedTypes: allowedTypes,
     ),
+    // 约定：整页表单 `pop(true)` 表示已保存；取消/名称为空是 pop(null)。
+    onClosed: (saved) {
+      if (saved == true) onSaved();
+    },
   );
-
-  if (result != true) return;
-
-  final name = nameController.text.trim();
-  if (name.isEmpty) return;
-  final reward = AttributeDelta(
-    health: (int.tryParse(healthController.text) ?? 0).clamp(0, 100),
-    discipline: (int.tryParse(disciplineController.text) ?? 0).clamp(0, 100),
-    charm: (int.tryParse(charmController.text) ?? 0).clamp(0, 100),
-  );
-
-  if (task == null) {
-    final id = await controller.service.createTask(
-      name: name,
-      description: descController.text.trim(),
-      type: type,
-      reward: reward,
-    );
-    final lines = subtasksController.text
-        .split('\n')
-        .map((l) => l.trim())
-        .where((l) => l.isNotEmpty);
-    for (final line in lines) {
-      await controller.service.createSubtask(taskId: id, name: line);
-    }
-  } else {
-    await controller.service.updateTask(
-      id: task.id,
-      name: name,
-      description: descController.text.trim(),
-      reward: reward,
-    );
-  }
 }
 
 /// 任务类型的界面名称。
@@ -207,31 +261,4 @@ Future<bool> confirmFailTask(BuildContext context, Task task) async {
     ),
   );
   return confirmed ?? false;
-}
-
-Widget _rewardField(
-  BuildContext context,
-  String label,
-  TextEditingController controller,
-) {
-  // 浮动标签（M3 描边式）会压在边框线上、与上方标题重叠，
-  // 所以改用"框外小标题 + 无标签输入框"的布局。
-  return Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Padding(
-        padding: const EdgeInsets.only(left: 12),
-        child: Text(label, style: Theme.of(context).textTheme.bodySmall),
-      ),
-      const SizedBox(height: 4),
-      Semantics(
-        label: label,
-        child: TextField(
-          controller: controller,
-          keyboardType: TextInputType.number,
-          decoration: const InputDecoration(),
-        ),
-      ),
-    ],
-  );
 }

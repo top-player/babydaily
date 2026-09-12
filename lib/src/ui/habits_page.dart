@@ -4,13 +4,13 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:babydaily/src/data/database.dart';
-import 'package:babydaily/src/domain/attributes.dart';
 import 'package:babydaily/src/domain/enums.dart';
 import 'package:babydaily/src/domain/game_service.dart';
 import 'package:babydaily/src/ui/app_controller.dart';
 import 'package:babydaily/src/ui/clay.dart';
 import 'package:babydaily/src/ui/feedback.dart';
 import 'package:babydaily/src/ui/habit_detail_page.dart';
+import 'package:babydaily/src/ui/habit_editor.dart';
 import 'package:babydaily/src/ui/motion.dart';
 import 'package:babydaily/src/ui/theme.dart';
 
@@ -177,17 +177,26 @@ class _HabitsPageState extends State<HabitsPage> {
           ],
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        heroTag: 'habits-fab',
-        onPressed: () async {
-          await _showHabitDialog(context);
-          await _load();
-        },
-        icon: const Icon(Icons.add),
-        label: const Text('添加习惯'),
-      ),
+      floatingActionButton: _addHabitOpener(),
     );
   }
+
+  /// 「添加习惯」FAB 的容器变换；**每次 build 现出**（缓存 widget 实例会让
+  /// Element.updateChild 跳过整棵子树的重建，卡片会停在旧内容上）。
+  Widget _addHabitOpener() => openEditorTransform(
+    context: context,
+    page: (context) => const HabitEditorPage(),
+    trigger: (context, open) => FloatingActionButton.extended(
+      // 关掉 Hero：容器变换本身就是这个按钮的转场。
+      heroTag: null,
+      onPressed: open,
+      icon: const Icon(Icons.add),
+      label: const Text('添加习惯'),
+    ),
+    onClosed: (saved) {
+      if (saved == true) _load();
+    },
+  );
 
   Widget _habitCard(Habit h, {bool archived = false}) {
     return _HabitCard(
@@ -204,17 +213,17 @@ class _HabitsPageState extends State<HabitsPage> {
       archived: archived,
       onReload: _load,
       onCheckIn: () => _checkIn(h),
-      menu: _habitMenu(h),
+      menu: (context, openEditor) => _habitMenu(h, openEditor),
     );
   }
 
-  Widget _habitMenu(Habit h) {
+  Widget _habitMenu(Habit h, VoidCallback openEditor) {
     return PopupMenuButton<String>(
       onSelected: (value) async {
         final service = AppScope.read(context).service;
         if (value == 'edit') {
-          await _showHabitDialog(context, habit: h);
-          await _load();
+          // 容器变换：从 ⋮ 的位置与尺寸长大成编辑页。
+          openEditor();
         } else if (value == 'archive') {
           await service.setHabitArchived(h.id, !h.isArchived);
           await _load();
@@ -252,189 +261,6 @@ class _HabitsPageState extends State<HabitsPage> {
       ],
     );
   }
-
-  Future<void> _showHabitDialog(BuildContext context, {Habit? habit}) async {
-    final controller = AppScope.read(context);
-    final nameController = TextEditingController(text: habit?.name ?? '');
-    final descController = TextEditingController(
-      text: habit?.description ?? '',
-    );
-    final healthController = TextEditingController(
-      text: habit != null && habit.rewardHealth > 0
-          ? '${habit.rewardHealth}'
-          : '0',
-    );
-    final disciplineController = TextEditingController(
-      text: habit != null && habit.rewardDiscipline > 0
-          ? '${habit.rewardDiscipline}'
-          : '1',
-    );
-    final charmController = TextEditingController(
-      text: habit != null && habit.rewardCharm > 0
-          ? '${habit.rewardCharm}'
-          : '0',
-    );
-    var frequency = habit?.frequencyType ?? HabitFrequency.daily;
-    var timesPerWeek = habit?.timesPerWeek ?? 3;
-
-    final saved = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: Text(habit == null ? '添加习惯' : '编辑习惯'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: nameController,
-                  maxLength: 30,
-                  decoration: const InputDecoration(labelText: '名称'),
-                ),
-                TextField(
-                  controller: descController,
-                  maxLength: 100,
-                  decoration: const InputDecoration(labelText: '描述（可选）'),
-                ),
-                const SizedBox(height: 8),
-                SegmentedButton<HabitFrequency>(
-                  segments: const [
-                    ButtonSegment(
-                      value: HabitFrequency.daily,
-                      label: Text('每日'),
-                    ),
-                    ButtonSegment(
-                      value: HabitFrequency.weekly,
-                      label: Text('每周 N 次'),
-                    ),
-                  ],
-                  selected: {frequency},
-                  onSelectionChanged: (s) =>
-                      setDialogState(() => frequency = s.first),
-                ),
-                if (frequency == HabitFrequency.weekly) ...[
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Text(
-                        '每周次数',
-                        style: Theme.of(context).textTheme.titleSmall,
-                      ),
-                      const SizedBox(width: 12),
-                      IconButton(
-                        onPressed: () => setDialogState(
-                          () => timesPerWeek = (timesPerWeek - 1).clamp(1, 7),
-                        ),
-                        icon: const Icon(Icons.remove_circle_outline),
-                      ),
-                      Text(
-                        '$timesPerWeek 次',
-                        style: Theme.of(context).textTheme.titleLarge,
-                      ),
-                      IconButton(
-                        onPressed: () => setDialogState(
-                          () => timesPerWeek = (timesPerWeek + 1).clamp(1, 7),
-                        ),
-                        icon: const Icon(Icons.add_circle_outline),
-                      ),
-                    ],
-                  ),
-                ],
-                const SizedBox(height: 12),
-                Text(
-                  '打卡奖励（属性，经验固定 +5）',
-                  style: Theme.of(context).textTheme.titleSmall,
-                ),
-                Row(
-                  children: [
-                    Expanded(child: _field('健康', healthController)),
-                    const SizedBox(width: 8),
-                    Expanded(child: _field('自律', disciplineController)),
-                    const SizedBox(width: 8),
-                    Expanded(child: _field('魅力', charmController)),
-                  ],
-                ),
-                if (habit != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 8),
-                    child: Text(
-                      '修改频率或每周次数会重新计算连续天数（累计保留）。',
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: const Text('取消'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(dialogContext).pop(true),
-              child: const Text('保存'),
-            ),
-          ],
-        ),
-      ),
-    );
-
-    if (saved == true) {
-      final name = nameController.text.trim();
-      if (name.isEmpty) return;
-      final reward = AttributeDelta(
-        health: (int.tryParse(healthController.text) ?? 0).clamp(0, 100),
-        discipline: (int.tryParse(disciplineController.text) ?? 0).clamp(
-          0,
-          100,
-        ),
-        charm: (int.tryParse(charmController.text) ?? 0).clamp(0, 100),
-      );
-      if (habit == null) {
-        await controller.service.createHabit(
-          name: name,
-          description: descController.text.trim(),
-          frequencyType: frequency,
-          timesPerWeek: frequency == HabitFrequency.weekly ? timesPerWeek : 1,
-          reward: reward,
-        );
-      } else {
-        await controller.service.updateHabit(
-          id: habit.id,
-          name: name,
-          description: descController.text.trim(),
-          frequencyType: frequency,
-          timesPerWeek: frequency == HabitFrequency.weekly ? timesPerWeek : 1,
-          reward: reward,
-          now: DateTime.now(),
-        );
-      }
-    }
-    // 注意：不在对话框关闭动画期间 dispose controller（见 notes_page 同款注释）。
-  }
-
-  Widget _field(String label, TextEditingController controller) {
-    // 浮动标签（M3 描边式）会压在边框线上、与上方标题重叠，
-    // 所以改用"框外小标题 + 无标签输入框"的布局。
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(left: 12),
-          child: Text(label, style: Theme.of(context).textTheme.bodySmall),
-        ),
-        const SizedBox(height: 4),
-        Semantics(
-          label: label,
-          child: TextField(
-            controller: controller,
-            keyboardType: TextInputType.number,
-            decoration: const InputDecoration(),
-          ),
-        ),
-      ],
-    );
-  }
 }
 
 /// 一张习惯卡片：点卡片走容器变换（从卡片位置放大）进详情页。
@@ -462,23 +288,31 @@ class _HabitCard extends StatefulWidget {
   /// 打卡（卡片内的按钮，点它不触发容器变换）。
   final VoidCallback onCheckIn;
 
-  /// 卡片右侧的 ⋮ 菜单。
-  final Widget menu;
+  /// 卡片右侧的 ⋮ 菜单；`openEditor` 是「编辑」那一项的容器变换入口。
+  final Widget Function(BuildContext context, VoidCallback openEditor) menu;
 
   @override
   State<_HabitCard> createState() => _HabitCardState();
 }
 
 class _HabitCardState extends State<_HabitCard> {
-  late final Opener _opener = openContainerTransform(
+  @override
+  Widget build(BuildContext context) => openContainerTransform(
     context: context,
     openBuilder: (context, close) => HabitDetailPage(habit: widget.habit),
     closedBuilder: _closedCard,
     onClosed: (_) => widget.onReload(),
   );
 
-  @override
-  Widget build(BuildContext context) => _opener;
+  /// ⋮ 菜单本身也是容器变换的源元素：点「编辑」时从 ⋮ 长大成编辑页。
+  Widget _editorOpener() => openEditorTransform(
+    context: context,
+    page: (context) => HabitEditorPage(habit: widget.habit),
+    trigger: widget.menu,
+    onClosed: (saved) {
+      if (saved == true) widget.onReload();
+    },
+  );
 
   Widget _closedCard(BuildContext context, VoidCallback open) {
     final h = widget.habit;
@@ -612,7 +446,7 @@ class _HabitCardState extends State<_HabitCard> {
                               child: const Text('打卡'),
                             ),
                     ),
-                  widget.menu,
+                  _editorOpener(),
                 ],
               ),
             ),

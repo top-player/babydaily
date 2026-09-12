@@ -65,11 +65,23 @@ const Color kCharmColor = Color(0xFFC25E9E);
 /// 失败与惩罚的强调色（比纯红柔和，和黏土暖色调同族）。
 const Color kFailColor = Color(0xFFC0503F);
 
+/// 场景 + 亮度 → 主题。缓存同一份 ThemeData 实例：
+///
+/// [buildTheme] 在 `RootGate.build` 里被调用，而 `AppScope` 每次业务通知
+/// （打卡、完成任务、存笔记…）都会重建 `RootGate`——不缓存的话每次通知都要重跑
+/// 两遍 `ColorScheme.fromSeed`（HCT 调色算法，毫秒级），而且拿到的是**新实例**；
+/// 新实例一旦与旧实例 `==` 不成立，`MaterialApp` 里的 `AnimatedTheme` 就会开始
+/// 一段整树重建的主题过渡。缓存后同一场景始终是同一个实例，两边都不会发生。
+final Map<(Scene, Brightness), ThemeData> _themeCache = {};
+
+ThemeData buildTheme(Scene scene, {Brightness brightness = Brightness.light}) =>
+    _themeCache.putIfAbsent((scene, brightness), () => _buildTheme(scene, brightness));
+
 /// 由场景驱动的黏土风主题：奶油底 + 大圆角 + 柔和阴影。
 ///
 /// 页面转场统一走 [buildClayPageTransitionsTheme]（容器变换观感的放大淡入）；
 /// 有源元素的卡片点击另由 `openContainerTransform` 承担，见 motion.dart。
-ThemeData buildTheme(Scene scene, {Brightness brightness = Brightness.light}) {
+ThemeData _buildTheme(Scene scene, Brightness brightness) {
   final atmosphere = atmosphereOf(scene);
   final isDark = brightness == Brightness.dark;
 

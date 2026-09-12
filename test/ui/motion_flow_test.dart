@@ -163,6 +163,65 @@ void main() {
       isA<ClayPageTransitionsBuilder>(),
     );
   });
+
+  testWidgets('容器变换：转场期间源元素与二级页各只构建一次（防重建风暴）', (tester) async {
+    var closedBuilds = 0;
+    var openBuilds = 0;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => openContainerTransform(
+              context: context,
+              openBuilder: (context, close) {
+                openBuilds++;
+                return const SizedBox.expand(child: Text('二级页'));
+              },
+              closedBuilder: (context, open) {
+                closedBuilds++;
+                return TextButton(
+                  onPressed: open,
+                  child: const Text('打开'),
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    // 收起态在源路由里构建一次（第一次 build），后续 setState 会重新构建它。
+    final closedAtRest = closedBuilds;
+    expect(closedAtRest, greaterThan(0));
+
+    await tester.tap(find.text('打开'));
+    await tester.pump();
+    final closedAfterFirstFrame = closedBuilds;
+    final openAfterFirstFrame = openBuilds;
+    expect(openAfterFirstFrame, greaterThan(0), reason: '二级页应当在转场第一帧就建好');
+
+    // 转场中段：动画帧不该再重建任何一边（这条就是性能回归的闸门——
+    // 每帧重建整页会让 120Hz 上的 8.3ms 预算直接爆掉）。
+    for (var i = 0; i < 12; i++) {
+      await tester.pump(const Duration(milliseconds: 20));
+      expect(
+        closedBuilds,
+        closedAfterFirstFrame,
+        reason: '第 $i 帧又重建了源元素',
+      );
+      expect(openBuilds, openAfterFirstFrame, reason: '第 $i 帧又重建了二级页');
+    }
+
+    await tester.pumpAndSettle();
+    expect(find.text('二级页'), findsOneWidget);
+    // 收尾时结构会换成「铺满整屏」的静态版本（二级页多一次），源路由也可能因为
+    // 路由状态变化重建一次（收起态多一次）——所以只给个宽松上限；
+    // 真正的闸门是上面「每个动画帧都不许重建」那两条。
+    expect(closedBuilds, lessThanOrEqualTo(closedAtRest + 3));
+    expect(openBuilds, lessThanOrEqualTo(openAfterFirstFrame + 1));
+    expect(tester.takeException(), isNull);
+  });
 }
 
 /// 记录推上来的路由。

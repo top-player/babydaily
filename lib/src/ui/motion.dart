@@ -27,8 +27,14 @@ import 'package:animations/animations.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 
-/// 容器变换时长：M3 大容器建议 300–400ms，黏土卡片取 400ms 更从容。
-const Duration kContainerTransformDuration = Duration(milliseconds: 400);
+/// 容器变换时长：对齐 M3 的 container transform（medium2 = 300ms）。
+///
+/// 原来取 400ms「更从容」，但 120Hz 屏每帧只有 8.3ms 预算，动画越长掉帧越容易被
+/// 看见；300ms 既符合规范也更跟手。
+const Duration kContainerTransformDuration = Duration(milliseconds: 300);
+
+/// 收起（反向）时长：出场比入场快一档，缩回原卡片时更跟手。
+const Duration kContainerTransformReverseDuration = Duration(milliseconds: 220);
 
 /// 无源元素的页面转场时长（M3 正向转场 300ms）。
 const Duration kPageTransitionDuration = Duration(milliseconds: 300);
@@ -112,36 +118,32 @@ PageTransitionsTheme buildClayPageTransitionsTheme() {
 
 /// 容器变换：构造一个 [Opener]。
 ///
-/// 用法——把卡片包成一个小 StatefulWidget，`Opener` 每张卡只建一次
-/// （在 `itemBuilder` 里重建 `Opener` 会同时重建它的 `GlobalKey`，
-/// 容器状态会跟着重来）：
+/// 用法——**在 build 里现出**（不要在 State 字段里缓存这个 widget 实例）：
 ///
 /// ```dart
-/// class _HabitCard extends StatefulWidget {
-///   const _HabitCard({required this.habit, required this.onReload});
-///   final Habit habit;
-///   final Future<void> Function() onReload;
-///   @override
-///   State<_HabitCard> createState() => _HabitCardState();
-/// }
-///
-/// class _HabitCardState extends State<_HabitCard> {
-///   late final Opener _opener = openContainerTransform(
-///     context: context,
-///     openBuilder: (context, close) => HabitDetailPage(habit: widget.habit),
-///     closedBuilder: (context, open) => Card(
-///       child: InkWell(onTap: open, child: _content()),
-///     ),
-///     onClosed: (_) => widget.onReload(),
-///   );
-///
-///   @override
-///   Widget build(BuildContext context) => _opener;
-/// }
+/// @override
+/// Widget build(BuildContext context) => openContainerTransform(
+///   context: context,
+///   openBuilder: (context, close) => HabitDetailPage(habit: habit),
+///   closedBuilder: (context, open) => Card(
+///     child: InkWell(onTap: open, child: content),
+///   ),
+///   onClosed: (_) => onReload(),
+/// );
 /// ```
+///
+/// **为什么必须每次 build 现出**：如果把它存进 State 字段反复用同一个实例，
+/// 调用点 `setState` 时 `Element.updateChild` 会因为「新旧 widget 完全同一个
+/// 对象」直接跳过整棵子树的重建——卡片会一直停在旧内容上（数据加载完了入口卡
+/// 还是空态）。现出新的 widget 实例，`_OpenerState` 才会走 `didUpdateWidget`，
+/// 用最新的 builder 重新构建卡片；容器自身的 State 由 element 复用保留。
 ///
 /// 卡片需要局部状态（折叠、动画等）时把 `closedBuilder` 收到的 `open`
 /// 传给它自己的 `onTap` 即可；本封装不代替卡片处理点击。
+///
+/// **契约**：`openBuilder` / `closedBuilder` 在容器推入时各调用一次，之后由
+/// [_ClayContainerRoute] 缓存复用（动画帧不再重建它们）。所以它们捕获的参数必须
+/// 是「这次转场期间不会变」的值：页面要显示新数据得在页面自己的 State 里刷新。
 Opener openContainerTransform({
   required BuildContext context,
   required Widget Function(BuildContext context, VoidCallback openAction)
@@ -153,14 +155,13 @@ Opener openContainerTransform({
   Duration transitionDuration = kContainerTransformDuration,
   ContainerTransitionType transitionType = ContainerTransitionType.fadeThrough,
   Color? middleColor,
+  Color? containerColor,
   ShapeBorder openShape = const RoundedRectangleBorder(),
   bool useRootNavigator = false,
 }) {
-  // 「减少动效」在这里读一次：调用点都在 build 阶段（含 State 字段的
-  // late 初始化），重建时会重新求值。
+  // 「减少动效」在这里读一次：调用点都在 build 阶段，重建时会重新求值。
   final reduceMotion = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
   return Opener._(
-    stateKey: GlobalKey<ClayOpenContainerState>(),
     closedBuilder: closedBuilder,
     openBuilder: openBuilder,
     onClosed: onClosed,
@@ -168,19 +169,42 @@ Opener openContainerTransform({
     transitionDuration: reduceMotion ? Duration.zero : transitionDuration,
     transitionType: transitionType,
     middleColor: middleColor,
+    containerColor: containerColor,
     openShape: openShape,
     useRootNavigator: useRootNavigator,
   );
 }
 
+/// 整页表单（添加/编辑任务、习惯、笔记）的容器变换。
+///
+/// 与 [openContainerTransform] 只差两处房规，所以单列一个入口：
+/// - 容器底色取 Scaffold 背景色：整页表单贴的是页面底色而不是卡片白，
+///   否则收尾一帧会看见白底闪一下；
+/// - 关闭结果交给 [onClosed]：约定 `pop(true)` 表示已保存（笔记编辑器
+///   `pop(<正文>)`，落库仍归调用方）。
+Opener openEditorTransform({
+  required BuildContext context,
+  required Widget Function(BuildContext context, VoidCallback openAction) trigger,
+  required Widget Function(BuildContext context) page,
+  required ValueChanged<Object?> onClosed,
+}) {
+  return openContainerTransform(
+    context: context,
+    containerColor: Theme.of(context).scaffoldBackgroundColor,
+    closedBuilder: trigger,
+    openBuilder: (context, close) => page(context),
+    onClosed: onClosed,
+  );
+}
+
 /// 容器变换 widget：把「点元素」变成「元素长大成二级页」。
 ///
-/// 由 [openContainerTransform] 构造，一般不用自己 new。
+/// 由 [openContainerTransform] / [openEditorTransform] 构造，一般不用自己 new。
 ///
 /// 收起态与展开态的构造器都做成**入参**（而不是塞在 State 里的字段）：
 /// 调用点 `setState` 重建时，新的 builder 会随新 widget 实例传下来，
 /// [State.didUpdateWidget] 才会把卡片重新构建一遍。若把 builder 固定在
-/// State 里，页面数据刷新后卡片会一直停在旧内容上。
+/// State 里、或把 widget 实例缓存起来复用，页面数据刷新后卡片会一直停在旧内容上。
 ///
 /// 房规（在封装里固定，调用点不再各写一遍）：
 /// - 时长/曲线统一用 [kContainerTransformDuration] 与 [kContainerTransformCurve]；
@@ -193,7 +217,6 @@ Opener openContainerTransform({
 ///   本封装默认 `tappable: false`，不再套一层 GestureDetector。
 class Opener extends StatefulWidget {
   const Opener._({
-    required this.stateKey,
     required this.closedBuilder,
     required this.openBuilder,
     this.onClosed,
@@ -201,15 +224,10 @@ class Opener extends StatefulWidget {
     this.transitionDuration = kContainerTransformDuration,
     this.transitionType = ContainerTransitionType.fadeThrough,
     this.middleColor,
+    this.containerColor,
     this.openShape = const RoundedRectangleBorder(),
     this.useRootNavigator = false,
   });
-
-  /// 只挂在内部的容器上。
-  ///
-  /// 注意别把这个 key 也传给 [Opener] 自己：同一个 GlobalKey 在一棵树里
-  /// 出现两次会直接抛 "Multiple widgets used the same GlobalKey"。
-  final GlobalKey<ClayOpenContainerState> stateKey;
 
   /// 收起态元素构造器（`openAction` 可主动打开容器）。
   final Widget Function(BuildContext context, VoidCallback openAction)
@@ -234,14 +252,17 @@ class Opener extends StatefulWidget {
   /// 转场中途的底色；默认取卡片表面色。
   final Color? middleColor;
 
+  /// 容器（以及转场期间铺在二级页底下的那层）的底色。
+  ///
+  /// 默认取卡片表面色——卡片就是这样，四角不会透出另一种颜色。整页表单这类
+  /// 「目的地底色不是卡片色」的入口可以显式指定（例如 Scaffold 背景色）。
+  final Color? containerColor;
+
   /// 展开态形状（默认铺满直角）。
   final ShapeBorder openShape;
 
   /// 是否推到根 Navigator。
   final bool useRootNavigator;
-
-  /// 程序化打开容器（`closedBuilder` 里的 `openAction` 也是它）。
-  void open() => stateKey.currentState?.openContainer();
 
   @override
   State<Opener> createState() => _OpenerState();
@@ -254,15 +275,15 @@ class _OpenerState extends State<Opener> {
     // 卡片表面色：转场期间容器里画的是「淡出的源卡片」，容器底色必须与它同色，
     // 否则四角会透出底色变成另一种颜色。
     final cardSurface = theme.cardTheme.color ?? theme.colorScheme.surface;
+    final surface = widget.containerColor ?? cardSurface;
     return RepaintBoundary(
       child: _ClayOpenContainer(
-        key: widget.stateKey,
         // 点击交给卡片自带的 InkWell/IconButton：水波纹与语义都由它们提供。
         tappable: false,
         transitionDuration: widget.transitionDuration,
         transitionType: widget.transitionType,
-        middleColor: widget.middleColor ?? cardSurface,
-        openColor: cardSurface,
+        middleColor: widget.middleColor ?? surface,
+        openColor: surface,
         openShape: widget.openShape,
         routeSettings: widget.routeSettings,
         useRootNavigator: widget.useRootNavigator,
@@ -280,7 +301,6 @@ class _OpenerState extends State<Opener> {
 /// 容器变换的状态槽：收起态就是那个元素，点击后推一条容器路由。
 class _ClayOpenContainer extends StatefulWidget {
   const _ClayOpenContainer({
-    super.key,
     required this.tappable,
     required this.transitionDuration,
     required this.transitionType,
@@ -307,14 +327,13 @@ class _ClayOpenContainer extends StatefulWidget {
   final RouteSettings? routeSettings;
 
   @override
-  State<_ClayOpenContainer> createState() => ClayOpenContainerState();
+  State<_ClayOpenContainer> createState() => _ClayOpenContainerState();
 }
 
-/// [Opener] 的容器状态：收起态就是那个元素，点击后推一条容器路由。
+/// 容器变换的状态：收起态就是那个元素，点击后推一条容器路由。
 ///
-/// 公开只是为了 [Opener.stateKey] 能放进 `GlobalKey`（`Opener.open()` 靠它
-/// 程序化打开容器）；调用点不需要直接用它。
-class ClayOpenContainerState extends State<_ClayOpenContainer> {
+/// `closedBuilder` 拿到的 `openAction` 就是这里的 [openContainer]。
+class _ClayOpenContainerState extends State<_ClayOpenContainer> {
   /// 收起态被容器接管时，源路由里那一个换成同尺寸的占位（避免出现两份卡片）。
   final GlobalKey<_HideableState> _hideableKey = GlobalKey<_HideableState>();
 
@@ -398,6 +417,14 @@ class _ClayContainerRoute extends ModalRoute<Object?> {
 
   @override
   final Duration transitionDuration;
+
+  /// 收起比展开快一档（M3：出场短于入场），缩回原卡片更跟手。
+  /// 「减少动效」时时长本来就是 0，这里跟着一起为 0。
+  @override
+  late final Duration reverseTransitionDuration =
+      transitionDuration == Duration.zero
+      ? Duration.zero
+      : kContainerTransformReverseDuration;
   final ContainerTransitionType transitionType;
   final CloseContainerBuilder closedBuilder;
   final OpenContainerBuilder<Object?> openBuilder;
@@ -417,11 +444,176 @@ class _ClayContainerRoute extends ModalRoute<Object?> {
   /// 收起态 → 整屏的尺寸插值（`begin` 在 [didPush] 里现场量）。
   final RectTween _rectTween = RectTween();
 
-  /// 二级页的钥匙：动画收尾时树形结构会变（去掉转场的临时代码），靠它保住 State。
+  /// 二级页的钥匙：动画收尾时树形结构会变（去掉转场的临时层），靠它保住 State。
   final GlobalKey _openBuilderKey = GlobalKey();
 
   AnimationStatus? _lastStatus;
   AnimationStatus? _currentStatus;
+
+  /// 容器形状：从卡片的圆角过渡到二级页的直角（每帧求值，别每帧新建 tween）。
+  late final ShapeBorderTween _shapeTween = ShapeBorderTween(
+    begin: const RoundedRectangleBorder(borderRadius: _kContainerRadius),
+    end: openShape,
+  );
+
+  /// 转场期间容器里那两层（源元素快照 + 二级页）的缓存。
+  ///
+  /// 只在「屏幕尺寸或方向变化」时重建：动画帧只重建外面那层尺寸/位移/底色的薄壳，
+  /// 不再重建二级页。原实现每帧都调一遍两个 builder——300ms 里把整页（列表、
+  /// 卡片、文字）重建三十多遍，白烧 UI 线程与 GC 压力（实测见 ADR-0010）。
+  Widget? _contentCache;
+  Size? _contentScreen;
+  bool? _contentReversing;
+
+  @override
+  Widget buildPage(
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+  ) {
+    // 曲线动画只建一次：原来每帧 new 一个 CurvedAnimation，等于每帧重新订阅一遍
+    // ticker；淡入淡出动画同理。
+    final curved = CurvedAnimation(
+      parent: animation,
+      curve: kContainerTransformCurve,
+      reverseCurve: kContainerTransformCurve.flipped,
+    );
+    final curvedInterrupted = CurvedAnimation(
+      parent: animation,
+      curve: kContainerTransformCurve,
+    );
+    final closedFade = _closedOpacityTween.animate(animation);
+    final closedFadeFlipped = _closedOpacityTween.flipped.animate(animation);
+    final openFade = _openOpacityTween.animate(animation);
+    final openFadeFlipped = _openOpacityTween.flipped.animate(animation);
+
+    return AnimatedBuilder(
+      animation: animation,
+      builder: (context, _) {
+        // 动画收尾时换成「容器已经等于整屏」的静态结构：去掉变换与裁剪层。
+        if (animation.isCompleted) {
+          return SizedBox.expand(
+            child: Material(
+              color: openColor,
+              shape: openShape,
+              child: RepaintBoundary(
+                child: Builder(
+                  key: _openBuilderKey,
+                  builder: (context) => openBuilder(context, closeContainer),
+                ),
+              ),
+            ),
+          );
+        }
+
+        // 收起方向且没被打断：先缩页面，再让卡片浮现（正放/倒放两套 tween）。
+        final reversing =
+            animation.status == AnimationStatus.reverse && !_interrupted;
+        final rect = _rectTween.evaluate(
+          _interrupted ? curvedInterrupted : curved,
+        )!;
+        return SizedBox.expand(
+          child: Align(
+            alignment: Alignment.topLeft,
+            child: Transform.translate(
+              offset: rect.topLeft,
+              child: SizedBox(
+                width: rect.width,
+                height: rect.height,
+                child: Material(
+                  clipBehavior: Clip.antiAlias,
+                  animationDuration: Duration.zero,
+                  color: (reversing ? _colorTween.flipped : _colorTween)
+                      .evaluate(animation),
+                  shape: _shapeTween.evaluate(curved),
+                  child: _contentFor(
+                    context,
+                    screen: MediaQuery.sizeOf(context),
+                    reversing: reversing,
+                    closedFade: reversing ? closedFadeFlipped : closedFade,
+                    openFade: reversing ? openFadeFlipped : openFade,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// 容器里的两层内容：源元素快照 + 二级页。
+  ///
+  /// 两个 builder 在这里各调用一次，结果被缓存复用——**转场期间不会再调用**
+  /// （所以它们的入参必须与本次转场无关，见 [openContainerTransform] 的契约）。
+  Widget _contentFor(
+    BuildContext context, {
+    required Size screen,
+    required bool reversing,
+    required Animation<double> closedFade,
+    required Animation<double> openFade,
+  }) {
+    final cached = _contentCache;
+    if (cached != null &&
+        _contentScreen == screen &&
+        _contentReversing == reversing) {
+      return cached;
+    }
+    _contentScreen = screen;
+    _contentReversing = reversing;
+    // 推入时量到的源元素矩形：快照按这个尺寸布局，容器长大时整块跟着放大。
+    final sourceRect = _rectTween.begin ?? Offset.zero & screen;
+    return _contentCache = Stack(
+      fit: StackFit.passthrough,
+      children: [
+        // 源元素快照：按**自身尺寸**布局后整体缩放到容器宽度，一边长大一边淡出。
+        ClipRect(
+          child: FittedBox(
+            fit: BoxFit.fitWidth,
+            alignment: Alignment.topLeft,
+            child: SizedBox(
+              width: sourceRect.width,
+              height: sourceRect.height,
+              child: RepaintBoundary(
+                child: FadeTransition(
+                  opacity: closedFade,
+                  // 注意：这里**不能**用 closedBuilderKey——源路由里那个元素还活着
+                  // （由 _Hideable 占位遮住），同一帧两棵树各挂一个同名 GlobalKey
+                  // 会直接抛 "Multiple widgets used the same GlobalKey"。
+                  // 容器里这份只是一张用来淡出的画，State 不需要搬。
+                  child: Builder(
+                    builder: (context) => closedBuilder(context, () {}),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+        // 二级页：按**自身尺寸（整屏）**1:1 布局，靠容器的裁剪一点点露出来。
+        //
+        // 不学 animations 包那样把整页缩放到容器宽度：那样每帧都在换缩放比，
+        // 光栅线程每帧都得把整页重画一遍（实测 120Hz 上 p90 7.8ms、7 帧超预算）。
+        // 1:1 之后变换矩阵恒定、只有裁剪在变，光栅时间掉到 ~1ms；观感差别很小
+        // ——容器宽度本来就从卡片宽度出发，卡片多数时候已经占满屏宽。
+        ClipRect(
+          child: OverflowBox(
+            alignment: Alignment.topLeft,
+            minWidth: screen.width,
+            maxWidth: screen.width,
+            minHeight: screen.height,
+            maxHeight: screen.height,
+            child: FadeTransition(
+              opacity: openFade,
+              child: Builder(
+                key: _openBuilderKey,
+                builder: (context) => openBuilder(context, closeContainer),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 
   static _FlippableTweenSequence<Color?> _colorTweenFor({
     required ContainerTransitionType transitionType,
@@ -481,6 +673,13 @@ class _ClayContainerRoute extends ModalRoute<Object?> {
     }
   }
 
+  /// 二级页的淡入进度。
+  ///
+  /// 和 `animations` 包的 fadeThrough 不同：这里让二级页**早**淡入（容器还小的
+  /// 那一段），此后全程不透明。原因是性能——页面只要带一点透明度，光栅线程就要
+  /// 给它开一层离屏合成；原方案里二级页有 4/5 的时间都在半透明状态，实测
+  /// 120Hz 下光栅 p90 7.8ms、7 帧超预算。改成早淡入 + 全不透明直绘后，
+  /// 只有开头两帧有离屏，其余帧是纯裁剪。
   static _FlippableTweenSequence<double> _openOpacityTweenFor(
     ContainerTransitionType transitionType,
   ) {
@@ -504,11 +703,15 @@ class _ClayContainerRoute extends ModalRoute<Object?> {
         return _FlippableTweenSequence<double>(<TweenSequenceItem<double>>[
           TweenSequenceItem<double>(
             tween: ConstantTween<double>(0),
-            weight: 1 / 5,
+            weight: 1 / 6,
           ),
           TweenSequenceItem<double>(
             tween: Tween<double>(begin: 0, end: 1),
-            weight: 4 / 5,
+            weight: 1 / 6,
+          ),
+          TweenSequenceItem<double>(
+            tween: ConstantTween<double>(1),
+            weight: 4 / 6,
           ),
         ]);
     }
@@ -609,130 +812,6 @@ class _ClayContainerRoute extends ModalRoute<Object?> {
     return running(_lastStatus) && running(_currentStatus);
   }
 
-  @override
-  Widget buildPage(
-    BuildContext context,
-    Animation<double> animation,
-    Animation<double> secondaryAnimation,
-  ) {
-    return AnimatedBuilder(
-      animation: animation,
-      builder: (context, _) {
-        if (animation.isCompleted) {
-          return SizedBox.expand(
-            child: Material(
-              color: openColor,
-              shape: openShape,
-              child: RepaintBoundary(
-                child: Builder(
-                  key: _openBuilderKey,
-                  builder: (context) => openBuilder(context, closeContainer),
-                ),
-              ),
-            ),
-          );
-        }
-
-        final curved = CurvedAnimation(
-          parent: animation,
-          curve: kContainerTransformCurve,
-          reverseCurve: _interrupted
-              ? null
-              : kContainerTransformCurve.flipped,
-        );
-        final TweenSequence<Color?> colorTween;
-        final TweenSequence<double> closedOpacityTween;
-        final TweenSequence<double> openOpacityTween;
-        if (animation.status == AnimationStatus.reverse && !_interrupted) {
-          // 收起：先缩页面，再让卡片浮现。
-          colorTween = _colorTween.flipped;
-          closedOpacityTween = _closedOpacityTween.flipped;
-          openOpacityTween = _openOpacityTween.flipped;
-        } else {
-          colorTween = _colorTween;
-          closedOpacityTween = _closedOpacityTween;
-          openOpacityTween = _openOpacityTween;
-        }
-
-        final screen = MediaQuery.sizeOf(context);
-        final rect = _rectTween.evaluate(curved)!;
-        final sourceRect = _rectTween.begin ?? rect;
-        return SizedBox.expand(
-          child: Align(
-            alignment: Alignment.topLeft,
-            child: Transform.translate(
-              offset: rect.topLeft,
-              child: SizedBox(
-                width: rect.width,
-                height: rect.height,
-                child: Material(
-                  clipBehavior: Clip.antiAlias,
-                  animationDuration: Duration.zero,
-                  color: colorTween.evaluate(animation),
-                  shape: ShapeBorderTween(
-                    begin: const RoundedRectangleBorder(
-                      borderRadius: _kContainerRadius,
-                    ),
-                    end: openShape,
-                  ).evaluate(curved),
-                  child: Stack(
-                    fit: StackFit.passthrough,
-                    children: [
-                      // 收起态元素淡出。FittedBox 把元素按**自身尺寸**布局后整体
-                      // 缩放到容器宽度；SizedBox 给出确定尺寸，否则 FittedBox 会
-                      // 把无界约束透传给里面的卡片（RenderPointerListener 报
-                      // "given an infinite size"）。
-                      ClipRect(
-                        child: FittedBox(
-                          fit: BoxFit.fitWidth,
-                          alignment: Alignment.topLeft,
-                          child: SizedBox(
-                            width: sourceRect.width,
-                            height: sourceRect.height,
-                            child: FadeTransition(
-                              opacity: closedOpacityTween.animate(animation),
-                              // 注意：这里**不能**用 closedBuilderKey——
-                              // 源路由里那个元素还活着（由 _Hideable 占位遮住），
-                              // 同一帧两棵树各挂一个同名 GlobalKey 会直接抛
-                              // "Multiple widgets used the same GlobalKey"。
-                              // 容器里这份只是一张用来淡出的画，State 不需要搬。
-                              child: Builder(
-                                builder: (context) =>
-                                    closedBuilder(context, () {}),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                      // 二级页淡入：按整屏尺寸布局后整体缩放，容器只负责裁剪。
-                      ClipRect(
-                        child: FittedBox(
-                          fit: BoxFit.fitWidth,
-                          alignment: Alignment.topLeft,
-                          child: SizedBox(
-                            width: screen.width,
-                            height: screen.height,
-                            child: FadeTransition(
-                              opacity: openOpacityTween.animate(animation),
-                              child: Builder(
-                                key: _openBuilderKey,
-                                builder: (context) =>
-                                    openBuilder(context, closeContainer),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
 }
 
 /// 控制子树可见性：不可见时留同尺寸占位（转场期间源元素不画但仍占位）。

@@ -33,6 +33,20 @@ class DailyTasksPage extends StatefulWidget {
 class _DailyTasksPageState extends State<DailyTasksPage> {
   final ScrollController _scroll = ScrollController();
 
+  /// 「添加每日任务」FAB 的容器变换；**每次 build 现出**。
+  Widget _addTaskOpener() => taskEditorTransform(
+    context: context,
+    allowedTypes: const [TaskType.daily],
+    trigger: (context, open) => FloatingActionButton.extended(
+      // 关掉 Hero：容器变换本身就是这个按钮的转场。
+      heroTag: null,
+      onPressed: open,
+      icon: const Icon(Icons.add),
+      label: const Text('添加每日任务'),
+    ),
+    onSaved: () => _load(),
+  );
+
   List<Task> _tasks = [];
   Map<String, List<DailyTaskLog>> _logsByDate = {};
   /// 时间线上已铺开的天数（含今天）。
@@ -593,22 +607,22 @@ class _DailyTasksPageState extends State<DailyTasksPage> {
     return Wrap(spacing: 6, runSpacing: 6, children: chips);
   }
 
-  Widget _menu(Task t) {
-    return PopupMenuButton<String>(
+  /// 每张今日卡片的 ⋮ 菜单同时是「编辑」的容器变换源元素：点编辑时从 ⋮ 长大成编辑页。
+  Widget _menu(Task t) => taskEditorTransform(
+    context: context,
+    task: t,
+    allowedTypes: const [TaskType.daily],
+    trigger: (context, open) => PopupMenuButton<String>(
       onSelected: (value) async {
         if (value == 'edit') {
-          await showTaskDialog(
-            context,
-            task: t,
-            allowedTypes: const [TaskType.daily],
-          );
-          await _load();
+          open();
         } else if (value == 'fail') {
           await _fail(t);
         } else if (value == 'delete') {
           final confirmed = await _confirmDelete(context, t.name);
           if (confirmed && mounted) {
-            await AppScope.read(context).service.deleteTask(t.id);
+            // 用 State.context：内层 context 跨了 await，lint 不认 State.mounted。
+            await AppScope.read(this.context).service.deleteTask(t.id);
             await _load();
           }
         }
@@ -618,8 +632,9 @@ class _DailyTasksPageState extends State<DailyTasksPage> {
         PopupMenuItem(value: 'fail', child: Text('标记失败')),
         PopupMenuItem(value: 'delete', child: Text('删除')),
       ],
-    );
-  }
+    ),
+    onSaved: () => _load(),
+  );
 
   Future<bool> _confirmDelete(BuildContext context, String name) async {
     final result = await showDialog<bool>(
@@ -655,18 +670,7 @@ class _DailyTasksPageState extends State<DailyTasksPage> {
           _historySection(today),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        heroTag: 'daily-fab',
-        onPressed: () async {
-          await showTaskDialog(
-            context,
-            allowedTypes: const [TaskType.daily],
-          );
-          await _load();
-        },
-        icon: const Icon(Icons.add),
-        label: const Text('添加每日任务'),
-      ),
+      floatingActionButton: _addTaskOpener(),
     );
   }
 }

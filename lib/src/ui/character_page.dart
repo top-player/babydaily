@@ -475,15 +475,11 @@ class _SceneCard extends StatelessWidget {
 }
 
 /// 设置入口：点击时由容器变换从图标位置放大到设置页。
-class _SettingsButton extends StatefulWidget {
+class _SettingsButton extends StatelessWidget {
   const _SettingsButton();
 
   @override
-  State<_SettingsButton> createState() => _SettingsButtonState();
-}
-
-class _SettingsButtonState extends State<_SettingsButton> {
-  late final Opener _opener = openContainerTransform(
+  Widget build(BuildContext context) => openContainerTransform(
     context: context,
     openBuilder: (context, close) => const SettingsPage(),
     closedBuilder: (context, open) => IconButton(
@@ -492,7 +488,4 @@ class _SettingsButtonState extends State<_SettingsButton> {
       icon: const Icon(Icons.settings_outlined),
     ),
   );
-
-  @override
-  Widget build(BuildContext context) => _opener;
 }

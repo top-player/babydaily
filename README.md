@@ -18,20 +18,23 @@
 
 - 领域规则（经验经济、等级曲线、连续计算、每日结算、任务失败与每日历史）以单元测试锁定，见 `test/domain/`。
 - 工程规范（改完必须提交、分 ABI 构建 release 并 adb 装机）：`AGENTS.md`。
-- 设计上下文：`CONTEXT.md`（术语表）；关键决策：`docs/adr/`（本地 SQLite+JSON 备份 / 习惯与任务分离 / 经验经济 / 每日结算惩罚 / 公共下载目录备份 / 笔记不发经验 / 任务失败与每日历史 / 系统文件选择器导入 / 容器变换转场）。
+- 设计上下文：`CONTEXT.md`（术语表）；关键决策：`docs/adr/`（本地 SQLite+JSON 备份 / 习惯与任务分离 / 经验经济 / 每日结算惩罚 / 公共下载目录备份 / 笔记不发经验 / 任务失败与每日历史 / 系统文件选择器导入 / 容器变换转场 / 动效性能实测）。
 - 对话记录导出：`node tools/export_sessions.mjs` —— 把本项目在 DSH 里的全部会话（`~/.dsh/sessions/` 下的 zstd JSONL 日志）导出成 `exports/conversations/`：`index.html` 总览 + 每会话一份 HTML（气泡视图、工具调用可折叠、支持搜索过滤）+ 同名 Markdown + `sessions.json` 结构化数据。该目录不入库。
 
 ### 转场动效（容器变换）
 
-页面切换与元素点击统一为 **容器变换**（Material 的 container transform）：点卡片时从该卡片的位置和尺寸放大到全屏二级页，返回缩回原卡片。实现都在 `lib/src/ui/motion.dart`，决策见 `docs/adr/0009-container-transform-transitions.md`。
+页面切换与元素点击统一为 **容器变换**（Material 的 container transform）：点卡片时从该卡片的位置和尺寸放大到全屏二级页，返回缩回原卡片。实现都在 `lib/src/ui/motion.dart`，决策见 `docs/adr/0009-container-transform-transitions.md`，性能实测见 `docs/adr/0010-animation-performance.md`。
 
-- **元素 → 二级页**：用 `openContainerTransform()` 包住卡片。`Opener` 必须装在一个 **StatefulWidget** 里只建一次，别在 `ListView.itemBuilder` 里现建——它内部靠 `GlobalKey` 挂状态，每帧换 key 会让容器状态反复重建。
+- **元素 → 二级页**：用 `openContainerTransform()` 包住卡片/FAB/⋮。**每次 build 现出**它（别存进 State 字段复用同一个实例）：`Element.updateChild` 遇到完全相同的 widget 对象会跳过整棵子树，卡片会一直停在旧内容上。容器自身的 State 由 element 复用保留。
+- **整页表单**：`openEditorTransform()` = 容器变换 + 容器底色取 `scaffoldBackgroundColor`。添加任务 / 添加每日任务 / 添加习惯 / 写笔记都是整页表单（原来是与 `showDialog` 的对话框——浮层没有可锚定的源元素，做不了容器变换）。
 - **容器路由是自研的**（没用 `animations` 包的 `OpenContainer`）：包的路由会给底层盖一层 `black54` 遮罩，转场期间整屏压暗、缩小的卡片四角变成「亮块压在暗底上」的硬边。自研那条只为把 `barrierColor` 设成 `null`，量测/隐藏/中断沿用同一套做法。
+- **契约**：`closedBuilder` / `openBuilder` 的产物在推入时各构建一次、之后被缓存，所以它们捕获的参数必须是「这次转场期间不会变」的值；页面要显示新数据得在页面自己的 State 里刷新（`test/ui/motion_flow_test.dart` 有闸门：转场中每个动画帧都不许再调用 builder）。
+- **时长**：展开 300ms、收起 220ms（`kContainerTransformDuration` / `kContainerTransformReverseDuration`），曲线 `fastOutSlowIn`。
 - **无源元素的页面跳转**：`pageTransitionsTheme` 在 `buildTheme()` 里统一配成 `ClayPageTransitionsBuilder`（0.92 放大淡入，各平台一致）。`PageTransitionsBuilder` 拿不到元素位置，所以有源元素的卡片点击**不要**指望它。
-- **标签页滑动**：`HomeShell` 用 `Stack` + 每页一个 `Transform.translate` 做左右滑动（`Offstage` 关掉离屏页）。位移必须走 `Transform`，**不能**用 `FractionalTranslation`——后者命中测试不跟着位移走。
-- **场景切换**：主角页场景卡的选中块是 `AnimatedAlign` + `FractionallySizedBox`，在两个槽位之间滑动。
+- **标签页滑动**：`HomeShell` 用 `Stack` + 每页一个 `Transform.translate` 做左右滑动（`Offstage` 关掉离屏页），**不做整屏渐隐**（两层整屏 `Opacity` 每帧各开一张离屏缓冲，滑到一半还会整屏发白）。位移必须走 `Transform`，**不能**用 `FractionalTranslation`——后者命中测试不跟着位移走。
+- **场景切换**：主角页场景卡的选中块是 `AnimatedAlign` + `FractionallySizedBox`，在两个槽位之间滑动；整页配色由 `MaterialApp` 内部的 `AnimatedTheme` 过渡（这是全应用 UI 线程最重的一段，见 ADR-0010）。
 - **减少动效**：系统开启「减少动效」时容器变换与标签滑动都短路成零时长，直接切页。
-- **性能**：展开态整页、四个标签页各有一层 `RepaintBoundary`。
+- **性能**：切页只平移不重建页面、容器转场不重建两棵子树、展开态整页与四个标签页各有一层 `RepaintBoundary`。
 - **go_router**：本项目没用（`MaterialApp.home` + `Navigator`）；若以后要上，`CustomTransitionPage` 会覆盖全局转场主题，而「从元素位置放大」没有等价物。细节见 ADR-0009。
 
 #### 在 profile 模式验证
@@ -41,18 +44,24 @@
 ```sh
 flutter devices                            # 拿设备 ID
 flutter run --profile -d <设备ID>          # 装到手机并附上 DevTools
+
+# 或直接跑可重复的帧耗时测量（改前改后对比同一段脚本）：
+flutter drive --profile --no-dds --no-pub -d <设备ID> \
+  --driver=test_driver/perf_driver.dart --target=integration_test/perf_test.dart
 ```
 
+- 测量脚本会给五段动效分别打印 build / raster 的 p50、p90、max 与**超预算帧数**，预算按真实刷新周期算（本机 120Hz → 8.33ms）。注意 SDK 自带的 `missed_frame_*_budget_count` 写死 16ms，在 120Hz 上会漏报，别用那个数。
 - 手机开「开发者选项 → GPU 渲染模式分析 → 在屏幕上显示为条形图」，或 DevTools 的 **Performance Overlay**，
   看 `UI` 与 `Raster` 两条：连点卡片进出二级页，帧时间应稳定在 16ms 以下（60Hz）/ 8ms 以下（120Hz）。
 - 验证 `RepaintBoundary` 是否生效：DevTools → **Performance** 里勾 `Highlight repaints`（或 Inspector 里选中
-  `RepaintBoundary` 节点），转场时不应该看到整页跟着闪；本页的 `RepaintBoundary` 数量应是「卡片数 + 1」的量级，
-  不随卡片内容变多而增加。
+  `RepaintBoundary` 节点），转场时不应该看到整页跟着闪。
 - 验证减少动效通路：手机「开发者选项 → 动画程序时长缩放 → 关闭」（或在系统设置里关掉动画）后重启应用，
   再点卡片应当是直接切页、没有缩放淡入。
 - 想看一帧到底画了什么：`flutter screenshot --type=skia --vm-service-url=<run 输出的 VM Service 地址>`
   （`--type=skia` 需要 vm-service 地址；`--type=device` 是普通截屏）。
 - 注意：profile 模式不支持热重载，改代码要重新 `flutter run --profile`，并且要重新走一遍上面的观察。
+- 这台设备上 `dumpsys SurfaceFlinger --latency` 取不到数据（对任何层名都只回刷新周期），`dumpsys gfxinfo framestats` 量的是平台窗口而不是 Flutter 引擎——别用它们做结论。
+
 
 ## 开发
 
@@ -65,11 +74,12 @@ flutter build apk --release --split-per-abi --split-debug-info=build/symbols --o
 # 符号表在 build/symbols/，配合混淆可还原崩溃栈
 ```
 
-**版本号的坑（Flutter 3.44）**：`--split-per-abi` 会给每个 ABI 的 versionCode 加偏移——`armeabi-v7a = 基准+1000`、`arm64-v8a = 基准+2000`、`x86_64 = 基准+4000`，基准就是 pubspec 的 `+N`（或用 `--build-number` 覆盖）。所以 **arm64 手机上看到的 versionCode 是 `N+2000`**，而 `adb install -r` 要求它比已装的大：
+**版本号的坑（Flutter 3.44）**：`--split-per-abi` 会给每个 ABI 的 versionCode 加偏移——`armeabi-v7a = 基准+1000`、`arm64-v8a = 基准+2000`、`x86_64 = 基准+4000`，基准就是 pubspec 的 `+N`（或用 `--build-number` 覆盖）。所以 **arm64 手机上看到的 versionCode 是 `N+2000`**，而 `adb install -r` 要求它**不小于**已装的值，否则报 `INSTALL_FAILED_VERSION_DOWNGRADE`（`flutter run`/`flutter drive` 遇到降级会**先卸载再装**，应用数据会被清空）：
 
-- 只把 versionName 从 1.0.3 递增到 1.0.4（pubspec `1.0.4+9` → arm64 得到 2009）会在装过 `+N` 更大的包的手机上报 `INSTALL_FAILED_VERSION_DOWNGRADE`；
-- 装机时用 `--build-number <更大的基准>` 越过即可，pubspec 的 `+N` 保持与「第几次构建」一致（`flutter build apk --release --split-per-abi --split-debug-info=build/symbols --obfuscate --build-number 3000` → arm64 得到 5000）；
-- 先 `aapt dump badging <apk> | findstr package` 看一眼实际 versionCode，比猜快。
+- 这台手机上跑过 `--build-number 3000` 的 release（arm64 → 5000），pubspec 的 `+9` 比它小得多，所以后来把 pubspec 提到了 `1.0.5+5001`：**不分 ABI 的 profile/debug 安装用 pubspec 的 `+N` 本身当 versionCode**，要大于手机上的值才不会被判降级；
+- 分 ABI 的 release 装机时用 `--build-number <基准>`，让 `arm64 = 基准+2000` 越过手机当前值（本次 `--build-number 5001` → 7001）；
+- 先 `aapt dump badging <apk> | findstr package`（或 `adb shell dumpsys package com.yjym.baby.babydaily | grep version`）看一眼实际 versionCode，比猜快。
+
 
 ### 应用图标
 
