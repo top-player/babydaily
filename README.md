@@ -18,8 +18,38 @@
 
 - 领域规则（经验经济、等级曲线、连续计算、每日结算、任务失败与每日历史）以单元测试锁定，见 `test/domain/`。
 - 工程规范（改完必须提交、分 ABI 构建 release 并 adb 装机）：`AGENTS.md`。
-- 设计上下文：`CONTEXT.md`（术语表）；关键决策：`docs/adr/`（本地 SQLite+JSON 备份 / 习惯与任务分离 / 经验经济 / 每日结算惩罚 / 公共下载目录备份 / 笔记不发经验 / 任务失败与每日历史 / 系统文件选择器导入）。
+- 设计上下文：`CONTEXT.md`（术语表）；关键决策：`docs/adr/`（本地 SQLite+JSON 备份 / 习惯与任务分离 / 经验经济 / 每日结算惩罚 / 公共下载目录备份 / 笔记不发经验 / 任务失败与每日历史 / 系统文件选择器导入 / 容器变换转场）。
 - 对话记录导出：`node tools/export_sessions.mjs` —— 把本项目在 DSH 里的全部会话（`~/.dsh/sessions/` 下的 zstd JSONL 日志）导出成 `exports/conversations/`：`index.html` 总览 + 每会话一份 HTML（气泡视图、工具调用可折叠、支持搜索过滤）+ 同名 Markdown + `sessions.json` 结构化数据。该目录不入库。
+
+### 转场动效（容器变换）
+
+页面切换与元素点击统一为 **容器变换**（Material 的 container transform）：点卡片时从该卡片的位置和尺寸放大到全屏二级页，返回缩回原卡片。实现都在 `lib/src/ui/motion.dart`，决策见 `docs/adr/0009-container-transform-transitions.md`。
+
+- **元素 → 二级页**：用 `openContainerTransform()`（封装 animations 包的 `OpenContainer`）包住卡片。`Opener` 必须装在一个 **StatefulWidget** 里只建一次，别在 `ListView.itemBuilder` 里现建——它内部靠 `GlobalKey` 挂状态，每帧换 key 会让容器状态反复重建。
+- **无源元素的页面跳转**：`pageTransitionsTheme` 在 `buildTheme()` 里统一配成 `ClayPageTransitionsBuilder`（0.92 放大淡入，各平台一致）。`PageTransitionsBuilder` 拿不到元素位置，所以有源元素的卡片点击**不要**指望它，用 `openContainerTransform`。
+- **减少动效**：系统开启「减少动效」时两处都短路成零时长，直接切页。
+- **性能**：收起态元素、展开态整页、`HomeShell` 四个标签页各有一层 `RepaintBoundary`。
+- **go_router**：本项目没用（`MaterialApp.home` + `Navigator`）；若以后要上，`CustomTransitionPage` 会覆盖全局转场主题，而「从元素位置放大」没有等价物。细节见 ADR-0009。
+
+#### 在 profile 模式验证
+
+动效与性能都必须在 **profile** 模式看（debug 的帧时间没有参考价值）：
+
+```sh
+flutter devices                            # 拿设备 ID
+flutter run --profile -d <设备ID>          # 装到手机并附上 DevTools
+```
+
+- 手机开「开发者选项 → GPU 渲染模式分析 → 在屏幕上显示为条形图」，或 DevTools 的 **Performance Overlay**，
+  看 `UI` 与 `Raster` 两条：连点卡片进出二级页，帧时间应稳定在 16ms 以下（60Hz）/ 8ms 以下（120Hz）。
+- 验证 `RepaintBoundary` 是否生效：DevTools → **Performance** 里勾 `Highlight repaints`（或 Inspector 里选中
+  `RepaintBoundary` 节点），转场时不应该看到整页跟着闪；本页的 `RepaintBoundary` 数量应是「卡片数 + 1」的量级，
+  不随卡片内容变多而增加。
+- 验证减少动效通路：手机「开发者选项 → 动画程序时长缩放 → 关闭」（或在系统设置里关掉动画）后重启应用，
+  再点卡片应当是直接切页、没有缩放淡入。
+- 想看一帧到底画了什么：`flutter screenshot --type=skia --vm-service-url=<run 输出的 VM Service 地址>`
+  （`--type=skia` 需要 vm-service 地址；`--type=device` 是普通截屏）。
+- 注意：profile 模式不支持热重载，改代码要重新 `flutter run --profile`，并且要重新走一遍上面的观察。
 
 ## 开发
 

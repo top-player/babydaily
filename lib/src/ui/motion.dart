@@ -11,6 +11,11 @@
 /// 为什么全局主题承担不了「从元素位置放大」：`PageTransitionsBuilder` 只拿到
 /// `animation` 与子页，拿不到触发元素的位置与尺寸，所以卡片这类**有源元素**的
 /// 转场必须由 OpenContainer 承担，`pageTransitionsTheme` 只做兜底。
+///
+/// 本项目没用 go_router（`MaterialApp.home` + `Navigator`）。若以后上 go_router：
+/// 全局兜底转场仍作用于 `MaterialPageRoute`（`CustomTransitionPage` 会覆盖它，
+/// 需显式带上本文件的 builder）；而「从元素位置放大」没有等价物——它依赖
+/// `_OpenContainerRoute` 在转场期间仍能测到源元素。详见 ADR-0009。
 library;
 
 import 'package:animations/animations.dart';
