@@ -65,6 +65,12 @@ flutter build apk --release --split-per-abi --split-debug-info=build/symbols --o
 # 符号表在 build/symbols/，配合混淆可还原崩溃栈
 ```
 
+**版本号的坑（Flutter 3.44）**：`--split-per-abi` 会给每个 ABI 的 versionCode 加偏移——`armeabi-v7a = 基准+1000`、`arm64-v8a = 基准+2000`、`x86_64 = 基准+4000`，基准就是 pubspec 的 `+N`（或用 `--build-number` 覆盖）。所以 **arm64 手机上看到的 versionCode 是 `N+2000`**，而 `adb install -r` 要求它比已装的大：
+
+- 只把 versionName 从 1.0.3 递增到 1.0.4（pubspec `1.0.4+9` → arm64 得到 2009）会在装过 `+N` 更大的包的手机上报 `INSTALL_FAILED_VERSION_DOWNGRADE`；
+- 装机时用 `--build-number <更大的基准>` 越过即可，pubspec 的 `+N` 保持与「第几次构建」一致（`flutter build apk --release --split-per-abi --split-debug-info=build/symbols --obfuscate --build-number 3000` → arm64 得到 5000）；
+- 先 `aapt dump badging <apk> | findstr package` 看一眼实际 versionCode，比猜快。
+
 ### 应用图标
 
 源图 `icon2.png`（圆角方块插画：小人爬楼梯奔向星星，奶油底 `#FCF0DF`）。资源由脚本生成，不要手改 `mipmap-*` 下的 PNG：
