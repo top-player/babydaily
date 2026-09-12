@@ -11,9 +11,12 @@ import 'package:babydaily/src/ui/tasks_page.dart';
 import 'package:babydaily/src/ui/theme.dart';
 
 class RootGate extends StatefulWidget {
-  const RootGate({super.key, required this.controller});
+  const RootGate({super.key, required this.controller, this.navigatorObservers});
 
   final AppController controller;
+
+  /// 追加到根 Navigator 的观察者（测试用来核对推的是哪条路由）。
+  final List<NavigatorObserver>? navigatorObservers;
 
   @override
   State<RootGate> createState() => _RootGateState();
@@ -52,6 +55,7 @@ class _RootGateState extends State<RootGate> with WidgetsBindingObserver {
           return MaterialApp(
             title: '宝宝日常',
             debugShowCheckedModeBanner: false,
+            navigatorObservers: widget.navigatorObservers ?? const [],
             theme: buildTheme(scope.scene),
             darkTheme: buildTheme(scope.scene, brightness: Brightness.dark),
             themeMode: ThemeMode.system,
@@ -135,13 +139,15 @@ class _HomeShellState extends State<HomeShell> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      // 每个标签页一个 RepaintBoundary：切换标签（底部导航的水波纹）不会
+      // 把四个页面整棵子树一起标脏。
       body: IndexedStack(
         index: _index,
         children: const [
-          CharacterPage(),
-          TasksPage(),
-          HabitsPage(),
-          NotesPage(),
+          RepaintBoundary(child: CharacterPage()),
+          RepaintBoundary(child: TasksPage()),
+          RepaintBoundary(child: HabitsPage()),
+          RepaintBoundary(child: NotesPage()),
         ],
       ),
       bottomNavigationBar: NavigationBar(

@@ -34,6 +34,8 @@ dependencies:
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
+  # Material 动效库：OpenContainer 提供「卡片长大成全屏页」的容器变换转场。
+  animations: ^2.1.2
   drift: ^2.34.4
   sqlite3_flutter_libs: ^0.6.0+eol
   path_provider: ^2.1.6

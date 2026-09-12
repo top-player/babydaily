@@ -6,6 +6,7 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:babydaily/src/domain/enums.dart';
+import 'package:babydaily/src/ui/motion.dart';
 
 /// 一个场景的氛围定义。
 class SceneAtmosphere {
@@ -65,6 +66,9 @@ const Color kCharmColor = Color(0xFFC25E9E);
 const Color kFailColor = Color(0xFFC0503F);
 
 /// 由场景驱动的黏土风主题：奶油底 + 大圆角 + 柔和阴影。
+///
+/// 页面转场统一走 [buildClayPageTransitionsTheme]（容器变换观感的放大淡入）；
+/// 有源元素的卡片点击另由 `openContainerTransform` 承担，见 motion.dart。
 ThemeData buildTheme(Scene scene, {Brightness brightness = Brightness.light}) {
   final atmosphere = atmosphereOf(scene);
   final isDark = brightness == Brightness.dark;
@@ -101,6 +105,9 @@ ThemeData buildTheme(Scene scene, {Brightness brightness = Brightness.light}) {
   );
 
   return base.copyWith(
+    // 全局页面转场：所有平台统一为容器变换观感的放大淡入
+    // （卡片这类有源元素的转场由 OpenContainer 承担，见 motion.dart）。
+    pageTransitionsTheme: buildClayPageTransitionsTheme(),
     textTheme: base.textTheme.copyWith(
       headlineMedium: base.textTheme.headlineMedium?.copyWith(
         fontSize: 28,

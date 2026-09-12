@@ -13,6 +13,7 @@ import 'package:babydaily/src/ui/app_controller.dart';
 import 'package:babydaily/src/ui/clay.dart';
 import 'package:babydaily/src/ui/daily_tasks_page.dart';
 import 'package:babydaily/src/ui/feedback.dart';
+import 'package:babydaily/src/ui/motion.dart';
 import 'package:babydaily/src/ui/task_editor.dart';
 import 'package:babydaily/src/ui/theme.dart';
 
@@ -143,12 +144,16 @@ class _TasksPageState extends State<TasksPage> {
     showNotice(context, '「${failOutcome.taskName}」已标记失败，任务保留在已失败里');
   }
 
-  Future<void> _openDailyPage() async {
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => const DailyTasksPage()),
-    );
-    await _load();
-  }
+  /// 每日任务入口卡的容器变换；第一次 build 时惰性创建，之后复用同一个
+  /// Opener（GlobalKey 不能每次重建都换新）。
+  Opener? _dailyEntryOpener;
+
+  Opener get _dailyOpener => _dailyEntryOpener ??= openContainerTransform(
+    context: context,
+    openBuilder: (context, close) => const DailyTasksPage(),
+    closedBuilder: _closedDailyEntryCard,
+    onClosed: (_) => _load(),
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -249,8 +254,13 @@ class _TasksPageState extends State<TasksPage> {
     );
   }
 
-  /// 每日任务入口卡：今天进度 + 前几个任务，点卡片进入每日任务页。
+  /// 每日任务入口卡：今天进度 + 前几个任务，点卡片走容器变换进每日任务页。
   Widget _dailyEntryCard() {
+    // 卡片本体的构建搬到容器变换的 closedBuilder（同一个 Opener 复用）。
+    return _dailyOpener;
+  }
+
+  Widget _closedDailyEntryCard(BuildContext context, VoidCallback open) {
     final scheme = Theme.of(context).colorScheme;
     final today = dateString(DateTime.now());
     final done = _daily.where((t) => t.completedOn == today).length;
@@ -260,68 +270,72 @@ class _TasksPageState extends State<TasksPage> {
       margin: const EdgeInsets.only(bottom: 14),
       child: InkWell(
         borderRadius: BorderRadius.circular(22),
-        onTap: _openDailyPage,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 14, 14, 14),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  const ClayAvatar(
-                    icon: Icons.today,
-                    color: _kDailyColor,
-                    size: 40,
-                    iconSize: 20,
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          '每日任务',
-                          style: Theme.of(context).textTheme.titleMedium
-                              ?.copyWith(fontWeight: FontWeight.w800),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          _daily.isEmpty
-                              ? '还没有每日任务，点进来加一个'
-                              : '今天 $done/${_daily.length} 已完成'
-                                  '${failed > 0 ? ' · $failed 失败' : ''}',
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                      ],
+        onTap: open,
+        // 水波纹画在卡片自己的 Material 上（外层容器的 Material 是透明的）。
+        child: Material(
+          type: MaterialType.transparency,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 14, 14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const ClayAvatar(
+                      icon: Icons.today,
+                      color: _kDailyColor,
+                      size: 40,
+                      iconSize: 20,
                     ),
-                  ),
-                  Icon(Icons.chevron_right, color: scheme.primary),
-                ],
-              ),
-              if (preview.isNotEmpty) ...[
-                const SizedBox(height: 10),
-                Divider(height: 1, color: scheme.outlineVariant),
-                const SizedBox(height: 4),
-                for (final t in preview) _dailyPreviewRow(t, today),
-                if (_daily.length > preview.length)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 4, left: 30),
-                    child: Text(
-                      '还有 ${_daily.length - preview.length} 个每日任务…',
-                      style: Theme.of(context).textTheme.bodySmall,
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '每日任务',
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(fontWeight: FontWeight.w800),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            _daily.isEmpty
+                                ? '还没有每日任务，点进来加一个'
+                                : '今天 $done/${_daily.length} 已完成'
+                                    '${failed > 0 ? ' · $failed 失败' : ''}',
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                Padding(
-                  padding: const EdgeInsets.only(top: 6, left: 30),
-                  child: Text(
-                    '0 点未完成会扣属性并记为失败',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: scheme.onSurfaceVariant,
-                    ),
-                  ),
+                    Icon(Icons.chevron_right, color: scheme.primary),
+                  ],
                 ),
+                if (preview.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  Divider(height: 1, color: scheme.outlineVariant),
+                  const SizedBox(height: 4),
+                  for (final t in preview) _dailyPreviewRow(t, today),
+                  if (_daily.length > preview.length)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4, left: 30),
+                      child: Text(
+                        '还有 ${_daily.length - preview.length} 个每日任务…',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6, left: 30),
+                    child: Text(
+                      '0 点未完成会扣属性并记为失败',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                ],
               ],
-            ],
+            ),
           ),
         ),
       ),

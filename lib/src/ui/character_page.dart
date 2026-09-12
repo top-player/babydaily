@@ -7,6 +7,7 @@ import 'package:babydaily/src/domain/game_service.dart';
 import 'package:babydaily/src/domain/xp_economy.dart';
 import 'package:babydaily/src/ui/app_controller.dart';
 import 'package:babydaily/src/ui/clay.dart';
+import 'package:babydaily/src/ui/motion.dart';
 import 'package:babydaily/src/ui/settings_page.dart';
 import 'package:babydaily/src/ui/theme.dart';
 
@@ -94,15 +95,7 @@ class CharacterPage extends StatelessWidget {
                       ],
                     ),
                   ),
-                  IconButton(
-                    tooltip: '设置',
-                    onPressed: () => Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) => const SettingsPage(),
-                      ),
-                    ),
-                    icon: const Icon(Icons.settings_outlined),
-                  ),
+                  const _SettingsButton(),
                 ],
               ),
             ),
@@ -435,4 +428,27 @@ class CharacterPage extends StatelessWidget {
     );
     // 注意：不在对话框关闭动画期间 dispose controller（见 notes_page 同款注释）。
   }
+}
+
+/// 设置入口：点击时由容器变换从图标位置放大到设置页。
+class _SettingsButton extends StatefulWidget {
+  const _SettingsButton();
+
+  @override
+  State<_SettingsButton> createState() => _SettingsButtonState();
+}
+
+class _SettingsButtonState extends State<_SettingsButton> {
+  late final Opener _opener = openContainerTransform(
+    context: context,
+    openBuilder: (context, close) => const SettingsPage(),
+    closedBuilder: (context, open) => IconButton(
+      tooltip: '设置',
+      onPressed: open,
+      icon: const Icon(Icons.settings_outlined),
+    ),
+  );
+
+  @override
+  Widget build(BuildContext context) => _opener;
 }

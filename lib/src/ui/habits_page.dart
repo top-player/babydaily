@@ -11,6 +11,7 @@ import 'package:babydaily/src/ui/app_controller.dart';
 import 'package:babydaily/src/ui/clay.dart';
 import 'package:babydaily/src/ui/feedback.dart';
 import 'package:babydaily/src/ui/habit_detail_page.dart';
+import 'package:babydaily/src/ui/motion.dart';
 import 'package:babydaily/src/ui/theme.dart';
 
 const Color _kHabitFlame = Color(0xFFE8710A);
@@ -189,147 +190,21 @@ class _HabitsPageState extends State<HabitsPage> {
   }
 
   Widget _habitCard(Habit h, {bool archived = false}) {
-    final status =
-        _statusByHabit[h.id] ??
-        const HabitStatus(
-          streak: 0,
-          cumulative: 0,
-          checkedToday: false,
-          checkinDates: [],
-        );
-    final unit = h.frequencyType == HabitFrequency.daily ? '天' : '周';
-    final accent = h.frequencyType == HabitFrequency.daily
-        ? _kHabitFlame
-        : _kHabitWeekly;
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(22),
-        onTap: () async {
-          await Navigator.of(context).push(
-            MaterialPageRoute<void>(builder: (_) => HabitDetailPage(habit: h)),
-          );
-          await _load();
-        },
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 14, 8, 14),
-          child: Opacity(
-            opacity: archived ? 0.55 : 1,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                ClayAvatar(
-                  icon: h.frequencyType == HabitFrequency.daily
-                      ? Icons.local_fire_department
-                      : Icons.event_repeat,
-                  color: accent,
-                  size: 44,
-                  iconSize: 22,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        h.name,
-                        style: Theme.of(context).textTheme.titleMedium
-                            ?.copyWith(fontWeight: FontWeight.w800),
-                      ),
-                      if (h.description.isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 2),
-                          child: Text(
-                            h.description,
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
-                        ),
-                      const SizedBox(height: 8),
-                      Wrap(
-                        spacing: 6,
-                        runSpacing: 4,
-                        children: [
-                          TagPill(
-                            icon: Icons.local_fire_department,
-                            text: '连续 ${status.streak} $unit',
-                            color: _kHabitFlame,
-                          ),
-                          TagPill(
-                            icon: Icons.check_circle_outline,
-                            text: '累计 ${status.cumulative} 次',
-                            color: _kHabitWeekly,
-                          ),
-                          if (h.frequencyType == HabitFrequency.weekly &&
-                              h.timesPerWeek > 0)
-                            TagPill(
-                              text: '每周 ${h.timesPerWeek} 次',
-                              color: Theme.of(context).colorScheme.primary,
-                            ),
-                          if (h.rewardDiscipline > 0 ||
-                              h.rewardHealth > 0 ||
-                              h.rewardCharm > 0)
-                            TagPill(
-                              text: [
-                                if (h.rewardHealth > 0) '健康+${h.rewardHealth}',
-                                if (h.rewardDiscipline > 0)
-                                  '自律+${h.rewardDiscipline}',
-                                if (h.rewardCharm > 0) '魅力+${h.rewardCharm}',
-                              ].join(' '),
-                              color: Theme.of(context).colorScheme.primary,
-                            ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                if (!archived)
-                  Padding(
-                    padding: const EdgeInsets.only(left: 8, right: 4),
-                    child: status.checkedToday
-                        ? Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 10,
-                            ),
-                            decoration: BoxDecoration(
-                              color: kHealthColor.withValues(alpha: 0.13),
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                            child: Row(
-                              children: [
-                                const Icon(
-                                  Icons.check_circle,
-                                  size: 18,
-                                  color: kHealthColor,
-                                ),
-                                const SizedBox(width: 4),
-                                Text(
-                                  '已打卡',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w800,
-                                    color: kHealthColor,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          )
-                        : FilledButton(
-                            style: FilledButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 12,
-                              ),
-                            ),
-                            onPressed: () => _checkIn(h),
-                            child: const Text('打卡'),
-                          ),
-                  ),
-                _habitMenu(h),
-              ],
-            ),
+    return _HabitCard(
+      key: ValueKey<int>(h.id),
+      habit: h,
+      status:
+          _statusByHabit[h.id] ??
+          const HabitStatus(
+            streak: 0,
+            cumulative: 0,
+            checkedToday: false,
+            checkinDates: [],
           ),
-        ),
-      ),
+      archived: archived,
+      onReload: _load,
+      onCheckIn: () => _checkIn(h),
+      menu: _habitMenu(h),
     );
   }
 
@@ -558,6 +433,192 @@ class _HabitsPageState extends State<HabitsPage> {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// 一张习惯卡片：点卡片走容器变换（从卡片位置放大）进详情页。
+///
+/// 做成 StatefulWidget 是为了让 [Opener] 随这张卡的 Element 只建一次——
+/// 若在列表构建里现建，`GlobalKey` 每次重建都会换新，容器状态跟着重来。
+class _HabitCard extends StatefulWidget {
+  const _HabitCard({
+    super.key,
+    required this.habit,
+    required this.status,
+    required this.archived,
+    required this.onReload,
+    required this.onCheckIn,
+    required this.menu,
+  });
+
+  final Habit habit;
+  final HabitStatus status;
+  final bool archived;
+
+  /// 详情页返回后刷新列表。
+  final Future<void> Function() onReload;
+
+  /// 打卡（卡片内的按钮，点它不触发容器变换）。
+  final VoidCallback onCheckIn;
+
+  /// 卡片右侧的 ⋮ 菜单。
+  final Widget menu;
+
+  @override
+  State<_HabitCard> createState() => _HabitCardState();
+}
+
+class _HabitCardState extends State<_HabitCard> {
+  late final Opener _opener = openContainerTransform(
+    context: context,
+    openBuilder: (context, close) => HabitDetailPage(habit: widget.habit),
+    closedBuilder: _closedCard,
+    onClosed: (_) => widget.onReload(),
+  );
+
+  @override
+  Widget build(BuildContext context) => _opener;
+
+  Widget _closedCard(BuildContext context, VoidCallback open) {
+    final h = widget.habit;
+    final status = widget.status;
+    final archived = widget.archived;
+    final unit = h.frequencyType == HabitFrequency.daily ? '天' : '周';
+    final accent = h.frequencyType == HabitFrequency.daily
+        ? _kHabitFlame
+        : _kHabitWeekly;
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(22),
+        onTap: open,
+        // 水波纹画在卡片自己的 Material 上：外层容器的 Material 是透明的，
+        // 波纹画在那层会被卡片内容盖住。
+        child: Material(
+          type: MaterialType.transparency,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 8, 14),
+            child: Opacity(
+              opacity: archived ? 0.55 : 1,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  ClayAvatar(
+                    icon: h.frequencyType == HabitFrequency.daily
+                        ? Icons.local_fire_department
+                        : Icons.event_repeat,
+                    color: accent,
+                    size: 44,
+                    iconSize: 22,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          h.name,
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(fontWeight: FontWeight.w800),
+                        ),
+                        if (h.description.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 2),
+                            child: Text(
+                              h.description,
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          ),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 4,
+                          children: [
+                            TagPill(
+                              icon: Icons.local_fire_department,
+                              text: '连续 ${status.streak} $unit',
+                              color: _kHabitFlame,
+                            ),
+                            TagPill(
+                              icon: Icons.check_circle_outline,
+                              text: '累计 ${status.cumulative} 次',
+                              color: _kHabitWeekly,
+                            ),
+                            if (h.frequencyType == HabitFrequency.weekly &&
+                                h.timesPerWeek > 0)
+                              TagPill(
+                                text: '每周 ${h.timesPerWeek} 次',
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
+                            if (h.rewardDiscipline > 0 ||
+                                h.rewardHealth > 0 ||
+                                h.rewardCharm > 0)
+                              TagPill(
+                                text: [
+                                  if (h.rewardHealth > 0)
+                                    '健康+${h.rewardHealth}',
+                                  if (h.rewardDiscipline > 0)
+                                    '自律+${h.rewardDiscipline}',
+                                  if (h.rewardCharm > 0)
+                                    '魅力+${h.rewardCharm}',
+                                ].join(' '),
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (!archived)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 8, right: 4),
+                      child: status.checkedToday
+                          ? Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 10,
+                              ),
+                              decoration: BoxDecoration(
+                                color: kHealthColor.withValues(alpha: 0.13),
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                              child: Row(
+                                children: [
+                                  const Icon(
+                                    Icons.check_circle,
+                                    size: 18,
+                                    color: kHealthColor,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    '已打卡',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                      color: kHealthColor,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            )
+                          : FilledButton(
+                              style: FilledButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 12,
+                                ),
+                              ),
+                              onPressed: widget.onCheckIn,
+                              child: const Text('打卡'),
+                            ),
+                    ),
+                  widget.menu,
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
