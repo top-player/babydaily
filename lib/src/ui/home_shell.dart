@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:babydaily/src/ui/app_controller.dart';
 import 'package:babydaily/src/ui/character_page.dart';
 import 'package:babydaily/src/ui/habits_page.dart';
+import 'package:babydaily/src/ui/motion.dart';
 import 'package:babydaily/src/ui/notes_page.dart';
 import 'package:babydaily/src/ui/onboarding.dart';
 import 'package:babydaily/src/ui/tasks_page.dart';
@@ -133,26 +134,71 @@ class HomeShell extends StatefulWidget {
   State<HomeShell> createState() => _HomeShellState();
 }
 
-class _HomeShellState extends State<HomeShell> {
+class _HomeShellState extends State<HomeShell>
+    with SingleTickerProviderStateMixin {
   int _index = 0;
+
+  /// 四个标签页。必须保持常量实例（见 [build] 的注释）。
+  static const List<Widget> _tabPages = <Widget>[
+    RepaintBoundary(child: CharacterPage()),
+    RepaintBoundary(child: TasksPage()),
+    RepaintBoundary(child: HabitsPage()),
+    RepaintBoundary(child: NotesPage()),
+  ];
+
+  /// 0..3 的「页面位置」。注意 AnimationController 的值域默认是 0..1，
+  /// 必须显式给 `upperBound`，否则 animateTo(2) 会被夹到 1。
+  late final AnimationController _pagePosition = AnimationController(
+    vsync: this,
+    duration: kTabSlideDuration,
+    upperBound: 3,
+    value: 0,
+  );
+
+  @override
+  void dispose() {
+    _pagePosition.dispose();
+    super.dispose();
+  }
+
+  void _selectTab(int index) {
+    if (index == _index) return;
+    setState(() => _index = index);
+    // 系统「减少动效」：直接落位，不滑。
+    if (MediaQuery.maybeDisableAnimationsOf(context) ?? false) {
+      _pagePosition.value = index.toDouble();
+      return;
+    }
+    _pagePosition.animateTo(
+      index.toDouble(),
+      duration: kTabSlideDuration,
+      curve: Curves.easeOutCubic,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      // 每个标签页一个 RepaintBoundary：切换标签（底部导航的水波纹）不会
-      // 把四个页面整棵子树一起标脏。
-      body: IndexedStack(
-        index: _index,
-        children: const [
-          RepaintBoundary(child: CharacterPage()),
-          RepaintBoundary(child: TasksPage()),
-          RepaintBoundary(child: HabitsPage()),
-          RepaintBoundary(child: NotesPage()),
-        ],
+      // 四个标签页排成一行，按 _pagePosition 平移切页（新页滑入、旧页滑出）。
+      // 每页都是常量实例，动画帧只重建很薄的包装层、不重建页面子树。
+      body: ClipRect(
+        child: Stack(
+          children: [
+            for (var i = 0; i < _tabPages.length; i++)
+              Positioned.fill(
+                key: ValueKey<int>(i),
+                child: _SlotPage(
+                  slot: i,
+                  position: _pagePosition,
+                  child: _tabPages[i],
+                ),
+              ),
+          ],
+        ),
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,
-        onDestinationSelected: (i) => setState(() => _index = i),
+        onDestinationSelected: _selectTab,
         destinations: const [
           NavigationDestination(
             icon: Icon(Icons.face_outlined),
@@ -179,3 +225,55 @@ class _HomeShellState extends State<HomeShell> {
     );
   }
 }
+
+/// 滑轨上的一格：按与当前位置的差距水平平移，滑出去时渐隐、离屏后不绘制。
+///
+/// [child] 通过 [AnimatedBuilder] 的 `child` 参数传入，动画帧不会重建页面
+/// 子树——切标签只是平移，不会让页面重新挂载（重新取数、丢滚动位置）。
+///
+/// 离屏页用 `Visibility(offstage: true)` 关掉：它保留 State、不布局不绘制，
+/// 而且和 `IndexedStack` 一样让屏外页面在 `find.text` 这类默认
+/// `skipOffstage: true` 的查找里不可见（否则四个页面里同名的「任务」「习惯」
+/// 文案会互相打架）。
+class _SlotPage extends StatelessWidget {
+  const _SlotPage({
+    required this.slot,
+    required this.position,
+    required this.child,
+  });
+
+  /// 本页所在槽位（0..3）。
+  final int slot;
+
+  /// 0..3 的页面位置。
+  final Animation<double> position;
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: position,
+      child: child,
+      builder: (context, page) {
+        final distance = slot - position.value;
+        final width = MediaQuery.sizeOf(context).width;
+        final onscreen = distance.abs() < 1;
+        return Transform.translate(
+          // 第 i 页平时的位置在 i 页宽处，减去当前平移量就是它现在该在的位置。
+          offset: Offset(distance * width, 0),
+          child: Offstage(
+            // 完全滑出屏幕就不布局/不绘制，也不进 finder（页面 State 保留）。
+            offstage: !onscreen,
+            child: Opacity(
+              // 正位不透明，滑出去时渐隐。
+              opacity: (1 - distance.abs() * 1.6).clamp(0.0, 1.0),
+              child: page,
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+

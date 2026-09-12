@@ -25,10 +25,13 @@
 
 页面切换与元素点击统一为 **容器变换**（Material 的 container transform）：点卡片时从该卡片的位置和尺寸放大到全屏二级页，返回缩回原卡片。实现都在 `lib/src/ui/motion.dart`，决策见 `docs/adr/0009-container-transform-transitions.md`。
 
-- **元素 → 二级页**：用 `openContainerTransform()`（封装 animations 包的 `OpenContainer`）包住卡片。`Opener` 必须装在一个 **StatefulWidget** 里只建一次，别在 `ListView.itemBuilder` 里现建——它内部靠 `GlobalKey` 挂状态，每帧换 key 会让容器状态反复重建。
-- **无源元素的页面跳转**：`pageTransitionsTheme` 在 `buildTheme()` 里统一配成 `ClayPageTransitionsBuilder`（0.92 放大淡入，各平台一致）。`PageTransitionsBuilder` 拿不到元素位置，所以有源元素的卡片点击**不要**指望它，用 `openContainerTransform`。
-- **减少动效**：系统开启「减少动效」时两处都短路成零时长，直接切页。
-- **性能**：收起态元素、展开态整页、`HomeShell` 四个标签页各有一层 `RepaintBoundary`。
+- **元素 → 二级页**：用 `openContainerTransform()` 包住卡片。`Opener` 必须装在一个 **StatefulWidget** 里只建一次，别在 `ListView.itemBuilder` 里现建——它内部靠 `GlobalKey` 挂状态，每帧换 key 会让容器状态反复重建。
+- **容器路由是自研的**（没用 `animations` 包的 `OpenContainer`）：包的路由会给底层盖一层 `black54` 遮罩，转场期间整屏压暗、缩小的卡片四角变成「亮块压在暗底上」的硬边。自研那条只为把 `barrierColor` 设成 `null`，量测/隐藏/中断沿用同一套做法。
+- **无源元素的页面跳转**：`pageTransitionsTheme` 在 `buildTheme()` 里统一配成 `ClayPageTransitionsBuilder`（0.92 放大淡入，各平台一致）。`PageTransitionsBuilder` 拿不到元素位置，所以有源元素的卡片点击**不要**指望它。
+- **标签页滑动**：`HomeShell` 用 `Stack` + 每页一个 `Transform.translate` 做左右滑动（`Offstage` 关掉离屏页）。位移必须走 `Transform`，**不能**用 `FractionalTranslation`——后者命中测试不跟着位移走。
+- **场景切换**：主角页场景卡的选中块是 `AnimatedAlign` + `FractionallySizedBox`，在两个槽位之间滑动。
+- **减少动效**：系统开启「减少动效」时容器变换与标签滑动都短路成零时长，直接切页。
+- **性能**：展开态整页、四个标签页各有一层 `RepaintBoundary`。
 - **go_router**：本项目没用（`MaterialApp.home` + `Navigator`）；若以后要上，`CustomTransitionPage` 会覆盖全局转场主题，而「从元素位置放大」没有等价物。细节见 ADR-0009。
 
 #### 在 profile 模式验证

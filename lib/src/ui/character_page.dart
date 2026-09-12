@@ -281,70 +281,9 @@ class CharacterPage extends StatelessWidget {
   }
 
   Widget _sceneCard(BuildContext context, AppController controller) {
-    final scheme = Theme.of(context).colorScheme;
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('场景', style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(4),
-              decoration: BoxDecoration(
-                color: scheme.surface.withValues(alpha: 0.9),
-                borderRadius: BorderRadius.circular(18),
-                border: Border.all(color: scheme.outlineVariant, width: 1.2),
-              ),
-              child: Row(
-                children: [
-                  for (final atmosphere in sceneAtmospheres.values)
-                    Expanded(
-                      child: _sceneSegment(context, controller, atmosphere),
-                    ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _sceneSegment(
-    BuildContext context,
-    AppController controller,
-    SceneAtmosphere atmosphere,
-  ) {
-    final selected = controller.scene == atmosphere.scene;
-    return InkWell(
-      borderRadius: BorderRadius.circular(14),
-      onTap: () => controller.setScene(atmosphere.scene),
-      child: Container(
-        constraints: const BoxConstraints(minHeight: 44),
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(14),
-          color: selected
-              ? atmosphere.seed.withValues(alpha: 0.16)
-              : Colors.transparent,
-        ),
-        child: Column(
-          children: [
-            Text(atmosphere.emoji, style: const TextStyle(fontSize: 20)),
-            const SizedBox(height: 2),
-            Text(
-              atmosphere.label,
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
-                color: selected ? atmosphere.seed : null,
-              ),
-            ),
-          ],
-        ),
-      ),
+    return _SceneCard(
+      selected: controller.scene,
+      onSelect: controller.setScene,
     );
   }
 
@@ -427,6 +366,111 @@ class CharacterPage extends StatelessWidget {
       ),
     );
     // 注意：不在对话框关闭动画期间 dispose controller（见 notes_page 同款注释）。
+  }
+}
+
+/// 场景切换卡：选中块在两个槽位之间平滑滑动，文字颜色/字重跟着过渡。
+class _SceneCard extends StatelessWidget {
+  const _SceneCard({required this.selected, required this.onSelect});
+
+  final Scene selected;
+  final ValueChanged<Scene> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final scenes = sceneAtmospheres.values.toList();
+    final selectedIndex = scenes.indexWhere((a) => a.scene == selected);
+    // 选中块的底色用**当前选中**场景的主色，切换时颜色也跟着淡变。
+    final pillColor = atmosphereOf(selected).seed.withValues(alpha: 0.16);
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('场景', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                color: scheme.surface.withValues(alpha: 0.9),
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: scheme.outlineVariant, width: 1.2),
+              ),
+              child: Stack(
+                children: [
+                  // 选中块：按每个槽位 1/3 的宽度从左滑到右。
+                  // 它只负责滑动，颜色由 slot 自己淡入淡出，两边不会打架。
+                  Positioned.fill(
+                    child: AnimatedAlign(
+                      alignment: Alignment(
+                        scenes.length > 1
+                            ? -1 + 2 * selectedIndex / (scenes.length - 1)
+                            : 0,
+                        0,
+                      ),
+                      duration: kSceneSwitchDuration,
+                      curve: Curves.easeOutCubic,
+                      child: FractionallySizedBox(
+                        widthFactor: 1 / scenes.length,
+                        heightFactor: 1,
+                        child: AnimatedContainer(
+                          duration: kSceneSwitchDuration,
+                          curve: Curves.easeOutCubic,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(14),
+                            color: pillColor,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  Row(
+                    children: [
+                      for (final atmosphere in scenes)
+                        Expanded(
+                          child: _sceneSegment(context, atmosphere),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _sceneSegment(BuildContext context, SceneAtmosphere atmosphere) {
+    final selected = this.selected == atmosphere.scene;
+    return InkWell(
+      borderRadius: BorderRadius.circular(14),
+      onTap: () => onSelect(atmosphere.scene),
+      child: Container(
+        constraints: const BoxConstraints(minHeight: 44),
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+        child: Column(
+          children: [
+            Text(atmosphere.emoji, style: const TextStyle(fontSize: 20)),
+            const SizedBox(height: 2),
+            AnimatedDefaultTextStyle(
+              duration: kSceneSwitchDuration,
+              curve: Curves.easeOutCubic,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                color: selected
+                    ? atmosphere.seed
+                    : Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+              child: Text(atmosphere.label),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

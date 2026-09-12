@@ -60,6 +60,18 @@ void main() {
     return route is ModalRoute<dynamic> ? route : null;
   }
 
+  /// 断言最近推的是容器变换路由，而不是普通页面路由。
+  void expectContainerRoute({Duration? duration}) {
+    final route = lastRoute();
+    expect(route, isNotNull, reason: '点元素应该推一条路由上来');
+    expect(
+      route!.runtimeType.toString(),
+      contains('ContainerRoute'),
+      reason: '元素点击必须走容器变换，不能退回 MaterialPageRoute',
+    );
+    if (duration != null) expect(route.transitionDuration, duration);
+  }
+
   /// 转场中途页面淡入的透明度（没在转场时为空）。
   List<double> midTransitionOpacities(WidgetTester tester) => tester
       .widgetList<FadeTransition>(find.byType(FadeTransition))
@@ -83,14 +95,7 @@ void main() {
     await tester.pump(); // 起帧：路由入栈 + 第一个转场帧
     await tester.pump(const Duration(milliseconds: 100)); // 400ms 转场的 1/4
 
-    final route = lastRoute();
-    expect(route, isNotNull, reason: '点卡片应该推一条路由上来');
-    expect(
-      route!.runtimeType.toString(),
-      contains('OpenContainerRoute'),
-      reason: '卡片点击必须走容器变换，不能退回普通页面路由',
-    );
-    expect(route.transitionDuration, kContainerTransformDuration);
+    expectContainerRoute(duration: kContainerTransformDuration);
     expect(find.byType(HabitDetailPage), findsOneWidget);
     expect(
       midTransitionOpacities(tester),
@@ -125,11 +130,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
 
-    expect(
-      lastRoute()?.runtimeType.toString(),
-      contains('OpenContainerRoute'),
-    );
-    expect(lastRoute()?.transitionDuration, kContainerTransformDuration);
+    expectContainerRoute(duration: kContainerTransformDuration);
     expect(find.byType(SettingsPage), findsOneWidget);
     expect(midTransitionOpacities(tester), isNotEmpty);
 
