@@ -24,5 +24,12 @@ adb install -r build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
 
 - ABI 选择：小米等 arm64 机型装 `app-arm64-v8a-release.apk`。
 - 发布前递增 `pubspec.yaml` 的 `version: x.y.z+N`（build 号 +1，保证覆盖安装升级）。
+- **新包重命名**：构建产物一律改名成 `babydaily-<版本号>-<abi>.apk`（版本号取 `pubspec.yaml` 的 `versionName`，即 `x.y.z`），不要拿默认的 `app-<abi>-release.apk` 交付或存档：
+
+  ```sh
+  cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk \
+     dist/babydaily-1.0.5-arm64-v8a.apk
+  ```
+
 - 安装后用 `adb shell dumpsys package com.yjym.baby.babydaily | grep version` 核对设备上的 versionName / versionCode。
 - 混淆符号表在 `build/symbols/`，用于还原崩溃栈。
